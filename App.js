@@ -455,6 +455,7 @@ export default function App() {
       [
         {text:"إلغاء",style:"cancel"},
         {text:"تأكيد الرفع",onPress:async()=>{
+          const localSnapshot=dataRef.current;
           setCloudBusy(true);
           setCloudStatus("جارٍ التحقق من النسخة السحابية قبل الرفع...");
           try {
@@ -472,7 +473,7 @@ export default function App() {
                 return;
               }
               const {data:saved,error}=await supabase.from("jory_business_data")
-                .update({data})
+                .update({data:localSnapshot})
                 .eq("organization_id",organizationId)
                 .eq("revision",cloudRevision)
                 .select("revision,updated_at")
@@ -485,10 +486,11 @@ export default function App() {
                 return;
               }
               setCloudRevision(Number(saved.revision));
-              setCloudRemoteData({...data});
+              setCloudRemoteData({...localSnapshot});
               setCloudUpdatedAt(saved.updated_at||"");
               await AsyncStorage.setItem(syncMetaKey,JSON.stringify({revision:Number(saved.revision),updatedAt:saved.updated_at||""}));
               await AsyncStorage.removeItem(pendingSyncKey);
+              if(dataRef.current!==localSnapshot) { await AsyncStorage.setItem(pendingSyncKey,String(Date.now())); scheduleAutomaticSync(); }
               setCloudStatus("تم رفع بيانات هذا الجهاز بنجاح. المزامنة التلقائية مفعّلة للتعديلات القادمة.");
             } else {
               if(cloudRevision!==null) {
@@ -498,7 +500,7 @@ export default function App() {
                 return;
               }
               const {data:saved,error}=await supabase.from("jory_business_data")
-                .insert({organization_id:organizationId,data})
+                .insert({organization_id:organizationId,data:localSnapshot})
                 .select("revision,updated_at")
                 .single();
               if(error) throw error;
@@ -507,6 +509,7 @@ export default function App() {
               setCloudUpdatedAt(saved.updated_at||"");
               await AsyncStorage.setItem(syncMetaKey,JSON.stringify({revision:Number(saved.revision),updatedAt:saved.updated_at||""}));
               await AsyncStorage.removeItem(pendingSyncKey);
+              if(dataRef.current!==localSnapshot) { await AsyncStorage.setItem(pendingSyncKey,String(Date.now())); scheduleAutomaticSync(); }
               setCloudStatus("تم إنشاء أول نسخة سحابية بنجاح. المزامنة التلقائية مفعّلة للتعديلات القادمة.");
             }
           } catch(error) {
@@ -531,6 +534,7 @@ export default function App() {
       [
         {text:"إلغاء",style:"cancel"},
         {text:"حفظ نسخة ثم التحميل",onPress:async()=>{
+          const localSnapshot=dataRef.current;
           setCloudBusy(true);
           try {
             const {data:latest,error:readError}=await supabase.from("jory_business_data")
@@ -549,8 +553,12 @@ export default function App() {
               Alert.alert("تم إيقاف التحميل","النسخة السحابية تغيرت منذ آخر فحص. لم يتم استبدال بيانات الجهاز.");
               return;
             }
+            if(dataRef.current!==localSnapshot) {
+              Alert.alert("تغيرت البيانات المحلية","تم تسجيل تعديل جديد أثناء التحميل. لم يستبدل جوري بيانات الجهاز؛ أعد فحص السحابة ثم أعد المحاولة.");
+              return;
+            }
             const backupKey=KEY+":before-cloud-restore:"+Date.now();
-            await AsyncStorage.setItem(backupKey,JSON.stringify(data));
+            await AsyncStorage.setItem(backupKey,JSON.stringify(localSnapshot));
             const safeRemote={...INITIAL,...latest.data};
             await AsyncStorage.setItem(storageKey,JSON.stringify(safeRemote));
             setData(safeRemote);
