@@ -358,11 +358,39 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
     <Card><Text style={s.cardTitle}>مشروع TRUST للصابون</Text><Text style={s.body}>مرحلة البيع المباشر. سجّل المبيعات والمصروفات يومياً لمتابعة الأداء.</Text><Text style={s.status}>الحالة: تشغيل وبيع</Text></Card>
+  </>;
+
+  const reportScreen = <>
+    <Section>الملخص المالي</Section>
+    <View style={s.metrics}>
+      <Card><Text style={s.metricLabel}>المبيعات</Text><Text style={s.metricValue}>{money(totals.sales)}</Text></Card>
+      <Card><Text style={s.metricLabel}>المصروفات</Text><Text style={s.metricValue}>{money(totals.expenses)}</Text></Card>
+    </View>
+    <Card><Text style={s.metricLabel}>تكلفة البضاعة المسجلة</Text><Text style={s.metricValue}>{money(totals.cogs)}</Text><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(totals.gross)}</Text><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text></Card>
+    <Section>مؤشرات التشغيل</Section>
+    <View style={s.metrics}>
+      <Card><Text style={s.metricLabel}>أصناف المخزون</Text><Text style={s.metricValue}>{data.stock.length}</Text></Card>
+      <Card><Text style={s.metricLabel}>قيمة المخزون التقديرية</Text><Text style={s.metricValue}>{money(data.stock.reduce((a,x)=>a+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text></Card>
+    </View>
+    <View style={s.metrics}>
+      <Card><Text style={s.metricLabel}>دفعات الإنتاج</Text><Text style={s.metricValue}>{(data.productions||[]).length}</Text></Card>
+      <Card><Text style={s.metricLabel}>فحوصات الجودة</Text><Text style={s.metricValue}>{(data.qualityChecks||[]).length}</Text></Card>
+    </View>
+    <Section>حالة التشغيلات</Section>
+    {(data.productions||[]).length===0?<Empty>لا توجد دفعات إنتاج.</Empty>:(data.productions||[]).slice().reverse().map(p=><Card key={p.id}><Text style={s.cardTitle}>{p.productName}</Text><Text style={s.hint}>التشغيلة: {p.lotNumber||"قديمة"} • المتبقي: {p.remainingQuantity??p.outputQuantity} من {p.outputQuantity}</Text><Text style={s.hint}>الجودة: {p.qualityStatus||"غير محدد"} • تكلفة الدفعة: {money(p.totalCost)}</Text></Card>)}
+    <Section>تنبيهات المخزون</Section>
+    {data.stock.filter(x=>Number(x.quantity)<=0 || !(Number(x.unitCost)>0)).length===0?<Text style={s.status}>لا توجد تنبيهات رصيد صفري أو تكلفة ناقصة.</Text>:data.stock.filter(x=>Number(x.quantity)<=0 || !(Number(x.unitCost)>0)).map(x=><Card key={x.id}><Text style={s.cardTitle}>{x.name}</Text><Text style={s.hint}>الرصيد: {x.quantity} • {Number(x.quantity)<=0?"الرصيد صفر":"التكلفة غير مسجلة"}</Text></Card>)}
+    <Section>متابعة الجودة</Section>
+    <View style={s.metrics}>
+      <Card><Text style={s.metricLabel}>مرفوض</Text><Text style={[s.metricValue,{color:C.red}]}>{(data.qualityChecks||[]).filter(x=>x.decision==="مرفوض").length}</Text></Card>
+      <Card><Text style={s.metricLabel}>بانتظار فحص نهائي</Text><Text style={s.metricValue}>{(data.productions||[]).filter(x=>x.qualityStatus!=="مقبول").length}</Text></Card>
+    </View>
+    <Text style={s.hint}>هذه التقارير تُحسب من السجلات المحفوظة محلياً على هذا الجهاز. صافي التشغيل تقديري وليس قائمة دخل محاسبية مكتملة.</Text>
   </>;
 
   const financeScreen = (type,title,subtitle) => <><Section>{title}</Section><Text style={s.body}>{subtitle}</Text><Card>
@@ -424,6 +452,7 @@ export default function App() {
   else if(screen==="المشتريات") body=purchasesScreen;
   else if(screen==="الإنتاج") body=productionScreen;
   else if(screen==="الجودة") body=qualityScreen;
+  else if(screen==="التقارير") body=reportScreen;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
