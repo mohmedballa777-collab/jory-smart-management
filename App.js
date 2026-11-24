@@ -188,7 +188,15 @@ export default function App() {
 
   const removeEntry = (type,id) => Alert.alert("حذف العملية","هل تريد حذف هذا السجل؟",[
     {text:"إلغاء",style:"cancel"},
-    {text:"حذف",style:"destructive",onPress:()=>persist({...data,[type]:data[type].filter(x=>x.id!==id)})}
+    {text:"حذف",style:"destructive",onPress:()=>{
+      const record=(data[type]||[]).find(x=>x.id===id);
+      let next={...data,[type]:(data[type]||[]).filter(x=>x.id!==id)};
+      if(type==="sales" && record && record.itemId && Number(record.quantity)>0) {
+        next.stock=data.stock.map(x=>x.id===record.itemId?{...x,quantity:Number(x.quantity)+Number(record.quantity)}:x);
+        next.movements=(data.movements||[]).filter(m=>m.id!==id);
+      }
+      persist(next);
+    }}
   ]);
 
   const go = value => { setScreen(value); setName(""); setAmount(""); setQuantity(""); setNote(""); };
