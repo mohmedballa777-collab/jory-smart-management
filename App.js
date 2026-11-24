@@ -152,7 +152,7 @@ export default function App() {
 
   const addProduction = async () => {
     const output=Number(productionOutput), extra=productionExtraCost.trim()?Number(productionExtraCost):0;
-    if(!productionProduct.trim() || !productionOutput.trim() || !Number.isFinite(output) || output<=0 || !productionMaterials.trim() || !Number.isFinite(extra) || extra<0) {
+    if(!productionProduct.trim() || !productionOutput.trim() || !Number.isFinite(output) || output<=0 || (!selectedRecipeId && !productionMaterials.trim()) || !Number.isFinite(extra) || extra<0) {
       Alert.alert("بيانات ناقصة","أدخل اسم المنتج النهائي والكمية والمواد الخام المستخدمة."); return;
     }
     const selectedRecipe=(data.recipes||[]).find(x=>x.id===selectedRecipeId);
