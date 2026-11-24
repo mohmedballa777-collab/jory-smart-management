@@ -71,6 +71,8 @@ export default function App() {
   const [saleProject,setSaleProject] = useState("TRUST - الصابون");
   const [staffName,setStaffName] = useState("");
   const [staffJob,setStaffJob] = useState("");
+  const [staffDepartment,setStaffDepartment] = useState("الإدارة العامة");
+  const [reportDepartment,setReportDepartment] = useState("الكل");
   const [staffSalary,setStaffSalary] = useState("");
   const [attendanceStaff,setAttendanceStaff] = useState("");
   const [attendanceDate,setAttendanceDate] = useState(new Date().toISOString().slice(0,10));
@@ -452,7 +454,7 @@ export default function App() {
   const addStaff = async () => {
     const salary=Number(staffSalary);
     if(!staffName.trim() || !staffSalary.trim() || !Number.isFinite(salary) || salary<=0) { Alert.alert("بيانات ناقصة","أدخل اسم الموظف والراتب الشهري الصحيح."); return; }
-    const staff={id:"staff-"+Date.now(),name:staffName.trim(),job:staffJob.trim()||"غير محدد",monthlySalary:salary,createdAt:stamp(),active:true};
+    const staff={id:"staff-"+Date.now(),name:staffName.trim(),job:staffJob.trim()||"غير محدد",department:staffDepartment,monthlySalary:salary,createdAt:stamp(),active:true};
     await persist({...data,staff:[staff,...(data.staff||[])]});
     setStaffName("");setStaffJob("");setStaffSalary("");
   };
@@ -516,7 +518,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"],["الخزينة","الخزينة","💰"],["متابعة TRUST","متابعة TRUST","🧼"],["الموظفون والرواتب","الموظفون والرواتب","👷"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"],["الخزينة","الخزينة","💰"],["متابعة TRUST","متابعة TRUST","🧼"],["الموظفون والرواتب","الموظفون والرواتب","👷"],["أداء الإدارات","أداء الإدارات","📈"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
@@ -580,6 +582,26 @@ export default function App() {
     {trustDaySummary.production.length===0?<Empty>لا توجد دفعات إنتاج مسجلة.</Empty>:trustDaySummary.production.map(x=><Card key={x.id}><Text style={s.cardTitle}>{x.productName}</Text><Text style={s.hint}>الكمية المنتجة: {x.outputQuantity} • رقم التشغيلة: {x.lotNumber||"غير محدد"}</Text></Card>)}
   </>;
 
+  const departmentReports = <>
+    <Section>لوحة أداء الإدارات</Section>
+    <Card><Text style={s.label}>تصفية الإدارة</Text><View style={s.roleRow}><Pressable onPress={()=>setReportDepartment("الكل")} style={[s.roleChip,reportDepartment==="الكل"&&s.roleSelected]}><Text style={reportDepartment==="الكل"?s.roleSelectedText:s.roleText}>كل الإدارات</Text></Pressable>{DEPARTMENTS.map(x=><Pressable key={x[0]} onPress={()=>setReportDepartment(x[0])} style={[s.roleChip,reportDepartment===x[0]&&s.roleSelected]}><Text style={reportDepartment===x[0]?s.roleSelectedText:s.roleText}>{x[0]}</Text></Pressable>)}</View><Text style={s.hint}>الأرقام مبنية على المهام والموظفين والحضور والمصروفات التي تم إدخالها وربطها بالإدارة.</Text></Card>
+    {DEPARTMENTS.filter(dep=>reportDepartment==="الكل"||dep[0]===reportDepartment).map(dep=>{
+      const name=dep[0];
+      const tasks=(data.tasks||[]).filter(x=>x.department===name);
+      const staff=(data.staff||[]).filter(x=>x.department===name);
+      const ids=new Set(staff.map(x=>x.id));
+      const attendance=(data.attendance||[]).filter(x=>ids.has(x.staffId)&&x.date.slice(0,7)===payrollMonth);
+      const expenses=(data.expenses||[]).filter(x=>x.costCenter===name);
+      const done=tasks.filter(x=>x.status==="مكتملة").length;
+      const overdue=tasks.filter(x=>x.status!=="مكتملة"&&x.dueDate<new Date().toISOString().slice(0,10)).length;
+      const attendanceCount=attendance.filter(x=>x.status==="حضور").length;
+      const absenceCount=attendance.filter(x=>x.status==="غياب").length;
+      const expenseTotal=expenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
+      const paid=(data.payrollPayments||[]).filter(x=>ids.has(x.staffId)&&x.month===payrollMonth).reduce((sum,x)=>sum+Number(x.amount||0),0);
+      const pct=tasks.length?Math.round(done/tasks.length*100):0;
+      return <Card key={name}><View style={s.row}><Text style={s.cardTitle}>{dep[1]} {name}</Text><Text style={s.amount}>{pct}% إنجاز</Text></View><View style={s.metrics}><View><Text style={s.metricLabel}>المهام</Text><Text style={s.metricValue}>{tasks.length}</Text><Text style={s.hint}>مكتملة {done}</Text></View><View><Text style={s.metricLabel}>متأخرة</Text><Text style={[s.metricValue,{color:overdue?C.red:C.brand}]}>{overdue}</Text></View><View><Text style={s.metricLabel}>الموظفون</Text><Text style={s.metricValue}>{staff.length}</Text></View></View><View style={s.metrics}><View><Text style={s.metricLabel}>الحضور هذا الشهر</Text><Text style={s.metricValue}>{attendanceCount}</Text><Text style={s.hint}>غياب {absenceCount}</Text></View><View><Text style={s.metricLabel}>المصروفات</Text><Text style={s.metricValue}>{money(expenseTotal)}</Text></View><View><Text style={s.metricLabel}>الرواتب المصروفة</Text><Text style={s.metricValue}>{money(paid)}</Text></View></View><Text style={s.hint}>الفترة: {payrollMonth} • سجلات المصروفات تُحتسب عند اختيار مركز تكلفة مطابق لاسم الإدارة.</Text></Card>;
+    })}
+  </>;
   const reportScreen = <>
     <Section>الملخص المالي</Section>
     <View style={s.metrics}>
@@ -686,7 +708,7 @@ export default function App() {
 
   const hrScreen = <>
     <Section>إضافة موظف</Section>
-    <Card><Field label="اسم الموظف" value={staffName} onChange={setStaffName}/><Field label="المسمى الوظيفي" value={staffJob} onChange={setStaffJob}/><Field label="الراتب الشهري بالجنيه" value={staffSalary} onChange={setStaffSalary} keyboardType="decimal-pad"/><Btn title="حفظ الموظف" onPress={addStaff}/></Card>
+    <Card><Field label="اسم الموظف" value={staffName} onChange={setStaffName}/><Field label="المسمى الوظيفي" value={staffJob} onChange={setStaffJob}/><Text style={s.label}>الإدارة</Text><View style={s.roleRow}>{DEPARTMENTS.map(x=><Pressable key={x[0]} onPress={()=>setStaffDepartment(x[0])} style={[s.roleChip,staffDepartment===x[0]&&s.roleSelected]}><Text style={staffDepartment===x[0]?s.roleSelectedText:s.roleText}>{x[0]}</Text></Pressable>)}</View><Field label="الراتب الشهري بالجنيه" value={staffSalary} onChange={setStaffSalary} keyboardType="decimal-pad"/><Btn title="حفظ الموظف" onPress={addStaff}/></Card>
     <Section>تسجيل الحضور</Section>
     <Card><Text style={s.label}>اختر الموظف</Text><View style={s.roleRow}>{(data.staff||[]).map(x=><Pressable key={x.id} onPress={()=>setAttendanceStaff(x.id)} style={[s.roleChip,attendanceStaff===x.id&&s.roleSelected]}><Text style={attendanceStaff===x.id?s.roleSelectedText:s.roleText}>{x.name}</Text></Pressable>)}</View>
     <Field label="التاريخ YYYY-MM-DD" value={attendanceDate} onChange={setAttendanceDate}/>
@@ -736,6 +758,7 @@ export default function App() {
   else if(screen==="الموظفون والرواتب") body=hrScreen;
   else if(screen==="المهام") body=tasksScreen;
   else if(screen==="التقارير") body=reportScreen;
+  else if(screen==="أداء الإدارات") body=departmentReports;
   else if(screen==="العملاء") body=customersScreen;
   else if(screen==="الموردون") body=suppliersScreen;
   else if(screen==="المستخدمون") body=usersScreen;
