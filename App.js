@@ -4,6 +4,7 @@ import {
   Pressable, Alert, StatusBar, ActivityIndicator, Share
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase, isSupabaseConfigured } from "./src/lib/supabase";
 
 const KEY = "jouri-business-data-v1";
 const C = { ink:"#172B4D", muted:"#667085", brand:"#176B55", pale:"#EAF4EF", line:"#E7EBEF", bg:"#F5F7F8", white:"#FFFFFF", red:"#B54747", gold:"#D99B25" };
@@ -31,6 +32,16 @@ export default function App() {
   const [screen,setScreen] = useState("الرئيسية");
   const [loading,setLoading] = useState(true);
   const [storageError,setStorageError] = useState(false);
+  const [authReady,setAuthReady] = useState(!isSupabaseConfigured);
+  const [authSession,setAuthSession] = useState(null);
+  const [authBusy,setAuthBusy] = useState(false);
+  const [authEmail,setAuthEmail] = useState("");
+  const [authPassword,setAuthPassword] = useState("");
+  const [authMode,setAuthMode] = useState("signin");
+  const [authMessage,setAuthMessage] = useState("");
+  const [organizationId,setOrganizationId] = useState("");
+  const [organizationName,setOrganizationName] = useState("معامل جوري للصناعات المتعددة");
+  const [membershipLoading,setMembershipLoading] = useState(false);
   const [name,setName] = useState("");
   const [amount,setAmount] = useState("");
   const [quantity,setQuantity] = useState("");
@@ -105,6 +116,88 @@ export default function App() {
       }
     }).catch(() => setStorageError(true)).finally(() => setLoading(false));
   }, []);
+
+  const loadMembership = async userId => {
+    if(!supabase || !userId) { setOrganizationId(""); return; }
+    setMembershipLoading(true);
+    const { data: membership, error } = await supabase
+      .from("jory_memberships")
+      .select("organization_id")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+    if(error) setAuthMessage("تعذر قراءة عضوية الحساب: " + error.message);
+    setOrganizationId(membership?.organization_id || "");
+    setMembershipLoading(false);
+  };
+
+  useEffect(() => {
+    if(!isSupabaseConfigured || !supabase) return;
+    let active = true;
+    supabase.auth.getSession().then(({data,error}) => {
+      if(!active) return;
+      if(error) setAuthMessage("تعذر استعادة جلسة الدخول: " + error.message);
+      const session=data?.session || null;
+      setAuthSession(session);
+      if(session?.user?.id) loadMembership(session.user.id);
+      setAuthReady(true);
+    }).catch(error => {
+      if(active) { setAuthMessage("تعذر الاتصال بالمصادقة: " + error.message); setAuthReady(true); }
+    });
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((_event,session) => {
+      setAuthSession(session || null);
+      setOrganizationId("");
+      if(session?.user?.id) loadMembership(session.user.id);
+      else setMembershipLoading(false);
+    });
+    return () => { active=false; subscription.unsubscribe(); };
+  }, []);
+
+  const submitAuth = async () => {
+    const email=authEmail.trim().toLowerCase();
+    if(!email || !authPassword || authPassword.length<6) {
+      Alert.alert("بيانات الدخول","أدخل بريداً إلكترونياً وكلمة مرور من 6 أحرف على الأقل."); return;
+    }
+    setAuthBusy(true); setAuthMessage("");
+    try {
+      const result = authMode==="signup"
+        ? await supabase.auth.signUp({email,password:authPassword})
+        : await supabase.auth.signInWithPassword({email,password:authPassword});
+      if(result.error) throw result.error;
+      if(authMode==="signup" && !result.data.session) {
+        setAuthMessage("تم إنشاء طلب الحساب. راجع بريدك لتأكيده، ثم ارجع وسجّل الدخول.");
+      } else if(result.data.session) {
+        setAuthSession(result.data.session);
+        await loadMembership(result.data.user.id);
+        setAuthMessage("تم تسجيل الدخول. إذا لم تكن هناك مؤسسة مرتبطة، أنشئ مؤسسة جوري.");
+      }
+    } catch(error) {
+      setAuthMessage(error.message || "تعذر إكمال العملية.");
+    } finally { setAuthBusy(false); }
+  };
+
+  const createOrganization = async () => {
+    const orgName=organizationName.trim();
+    if(!orgName || !authSession?.user?.id) return;
+    setAuthBusy(true); setAuthMessage("");
+    try {
+      const {data:org,error} = await supabase.from("jory_organizations")
+        .insert({name:orgName,created_by:authSession.user.id})
+        .select("id").single();
+      if(error) throw error;
+      setOrganizationId(org.id);
+      setAuthMessage("تم إنشاء المؤسسة وتسجيل حسابك كمالك.");
+    } catch(error) {
+      setAuthMessage("تعذر إنشاء المؤسسة: " + error.message);
+    } finally { setAuthBusy(false); }
+  };
+
+  const signOut = async () => {
+    if(!supabase) return;
+    const {error}=await supabase.auth.signOut();
+    if(error) setAuthMessage("تعذر تسجيل الخروج: " + error.message);
+    else { setAuthSession(null); setOrganizationId(""); }
+  };
 
   const persist = async next => {
     setData(next);
@@ -753,7 +846,26 @@ export default function App() {
 
   const deptScreen = <Card><Text style={s.cardTitle}>{screen}</Text><Text style={s.body}>تم إنشاء مدخل لهذا القسم ضمن الهيكل الإداري لجوري. وظائفه التفصيلية ستُبنى على مراحل، مع ربطها بقاعدة البيانات والصلاحيات.</Text></Card>;
 
-  if(loading) return <SafeAreaView style={s.safe}><ActivityIndicator style={{marginTop:80}} size="large" color={C.brand}/><Text style={s.loading}>جارٍ تحميل بيانات جوري...</Text></SafeAreaView>;
+  if(loading || (isSupabaseConfigured && (!authReady || membershipLoading))) return <SafeAreaView style={s.safe}><ActivityIndicator style={{marginTop:80}} size="large" color={C.brand}/><Text style={s.loading}>جارٍ تجهيز جوري...</Text></SafeAreaView>;
+
+  if(isSupabaseConfigured && (!authSession || !organizationId)) return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
+    <View style={s.header}><View><Text style={s.brand}>جوري</Text><Text style={s.tagline}>معامل جوري للصناعات المتعددة</Text></View><View style={s.logo}><Text style={s.logoText}>ج</Text></View></View>
+    <Card><Section>{authSession ? "إنشاء مؤسسة جوري" : "تسجيل الدخول إلى جوري"}</Section>
+      <Text style={s.body}>اتصال الحساب السحابي مفعّل. بيانات التشغيل المحلية لا تُنقل إلى السحابة تلقائياً.</Text>
+      {!authSession ? <>
+        <Field label="البريد الإلكتروني" value={authEmail} onChange={setAuthEmail}/>
+        <Field label="كلمة المرور (6 أحرف على الأقل)" value={authPassword} onChange={setAuthPassword}/>
+        <Btn title={authBusy ? "جارٍ التنفيذ..." : authMode==="signin" ? "تسجيل الدخول" : "إنشاء حساب"} onPress={submitAuth}/>
+        <Btn title={authMode==="signin" ? "ليس لديك حساب؟ أنشئ حساباً" : "لديك حساب؟ سجّل الدخول"} onPress={()=>{setAuthMode(authMode==="signin"?"signup":"signin");setAuthMessage("");}} secondary/>
+      </> : <>
+        <Field label="اسم المؤسسة" value={organizationName} onChange={setOrganizationName}/>
+        <Btn title={authBusy ? "جارٍ الإنشاء..." : "إنشاء المؤسسة وتعييني مالكاً"} onPress={createOrganization}/>
+        <Btn title="تسجيل الخروج" onPress={signOut} secondary/>
+      </>}
+      {authMessage ? <Text style={s.status}>{authMessage}</Text> : null}
+    </Card>
+    <Text style={s.footer}>جوري • تسجيل الدخول السحابي</Text>
+  </ScrollView></SafeAreaView>;
 
   let body=home;
   if(screen==="المبيعات") body=financeScreen("sales","تسجيل المبيعات","سجّل كل عملية بيع، ويمكنك إدخال كمية المنتج.");
@@ -777,7 +889,7 @@ export default function App() {
 
   return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><ScrollView contentContainerStyle={s.page}>{header}
     <View style={s.topNav}><Pressable onPress={()=>go("الرئيسية")}><Text style={s.back}>‹ الرئيسية</Text></Pressable><Text style={s.screenTitle}>{screen}</Text></View>
-    {body}<Text style={s.footer}>جوري • نظام الإدارة الذكية • إصدار أولي</Text>
+    {body}{isSupabaseConfigured&&authSession?<Pressable onPress={signOut}><Text style={s.delete}>تسجيل الخروج من الحساب السحابي</Text></Pressable>:null}<Text style={s.footer}>جوري • نظام الإدارة الذكية • إصدار أولي</Text>
   </ScrollView><View style={s.bottom}>{[["الرئيسية","⌂"],["المبيعات","＋"],["المخزون","▦"],["الإعدادات","⚙"]].map(x=><Pressable key={x[0]} onPress={()=>go(x[0])} style={s.tab}><Text style={[s.tabIcon,screen===x[0]&&s.tabOn]}>{x[1]}</Text><Text style={[s.tabText,screen===x[0]&&s.tabOn]}>{x[0]}</Text></Pressable>)}</View></SafeAreaView>;
 }
 
