@@ -118,8 +118,8 @@ export default function App() {
   const [qcNote,setQcNote] = useState("");
 
   const storageKey = authSession?.user?.id ? KEY + ":" + authSession.user.id : KEY;
-  const syncMetaKey = organizationId ? KEY + ":cloud-sync-meta:" + organizationId : "";
-  const pendingSyncKey = organizationId ? KEY + ":cloud-sync-pending:" + organizationId : "";
+  const syncMetaKey = organizationId && authSession?.user?.id ? KEY + ":cloud-sync-meta:" + organizationId + ":" + authSession.user.id : "";
+  const pendingSyncKey = organizationId && authSession?.user?.id ? KEY + ":cloud-sync-pending:" + organizationId + ":" + authSession.user.id : "";
   const dataRef = useRef(data);
   const autoSyncLock = useRef(false);
   const autoSyncTimer = useRef(null);
@@ -138,12 +138,14 @@ export default function App() {
 
   useEffect(() => {
     let active=true;
+    let didLoad=false;
     setLoadedStorageKey("");
     setLoading(true);
     AsyncStorage.getItem(storageKey).then(async raw => {
       if(!active) return;
       if(raw) {
         const parsed=JSON.parse(raw);
+        if(!parsed || typeof parsed!=="object" || Array.isArray(parsed)) throw new Error("Invalid local data");
         setData({...INITIAL,...parsed});
         setLegacyLocalAvailable(false);
       } else if(storageKey!==KEY) {
@@ -155,8 +157,14 @@ export default function App() {
         setLegacyLocalAvailable(false);
         setData(INITIAL);
       }
+      didLoad=true;
     }).catch(() => { if(active) setStorageError(true); })
-      .finally(() => { if(active) { setLoading(false); setLoadedStorageKey(storageKey); } });
+      .finally(() => {
+        if(active) {
+          setLoading(false);
+          if(didLoad) setLoadedStorageKey(storageKey);
+        }
+      });
     return () => { active=false; };
   }, [storageKey]);
 
