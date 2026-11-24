@@ -39,6 +39,7 @@ export default function App() {
   const [outQty,setOutQty] = useState("");
   const [userName,setUserName] = useState("");
   const [userRole,setUserRole] = useState("موظف");
+  const [backupText,setBackupText] = useState("");
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then(raw => {
@@ -108,6 +109,27 @@ export default function App() {
     }
   };
 
+  const restoreBackup = () => {
+    let parsed;
+    try {
+      parsed=JSON.parse(backupText);
+    } catch (_) {
+      Alert.alert("ملف غير صالح","النص المدخل ليس JSON صالحاً."); return;
+    }
+    const restored=parsed && parsed.data ? parsed.data : parsed;
+    if(!restored || !Array.isArray(restored.sales) || !Array.isArray(restored.expenses) || !Array.isArray(restored.stock) || !Array.isArray(restored.users)) {
+      Alert.alert("نسخة غير متوافقة","تأكد أنك تستخدم نسخة احتياطية صادرة من تطبيق جوري."); return;
+    }
+    Alert.alert("تأكيد الاستعادة","سيتم استبدال البيانات الحالية بالبيانات الموجودة في النسخة الاحتياطية.",[
+      {text:"إلغاء",style:"cancel"},
+      {text:"استعادة البيانات",style:"destructive",onPress:async()=>{
+        await persist({...INITIAL,...restored});
+        setBackupText("");
+        Alert.alert("تمت الاستعادة","تم تحميل بيانات النسخة الاحتياطية على هذا الجهاز.");
+      }}
+    ]);
+  };
+
   const dailyReport = useMemo(() => {
     const today=new Date().toDateString();
     const sales=data.sales.filter(x=>new Date(x.date).toDateString()===today);
@@ -163,7 +185,7 @@ export default function App() {
 
   const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
 
-  const settingsScreen = <><Section>الإعدادات وحالة البيانات</Section><Card><Text style={s.cardTitle}>حفظ البيانات</Text><Text style={s.body}>الحفظ محلي على الجهاز باستخدام AsyncStorage. لا توجد مزامنة سحابية أو نسخ احتياطي تلقائي حالياً.</Text><Text style={[s.status,{color:storageError?C.red:C.brand}]}>{storageError?"يوجد خطأ في الحفظ":"حالة التخزين: متاح"}</Text><Btn title="تصدير نسخة احتياطية" onPress={shareBackup}/></Card><Card><Text style={s.cardTitle}>النسخة الحالية</Text><Text style={s.body}>واجهة تشغيل أولية تشمل المبيعات والمصروفات والمخزون والمستخدمين. لا تُدخل بيانات حساسة أو تعتمد عليها كسجل محاسبي نهائي قبل إعداد النسخ الاحتياطي والصلاحيات.</Text></Card></>;
+  const settingsScreen = <><Section>الإعدادات وحالة البيانات</Section><Card><Text style={s.cardTitle}>حفظ البيانات</Text><Text style={s.body}>الحفظ محلي على الجهاز باستخدام AsyncStorage. لا توجد مزامنة سحابية أو نسخ احتياطي تلقائي حالياً.</Text><Text style={[s.status,{color:storageError?C.red:C.brand}]}>{storageError?"يوجد خطأ في الحفظ":"حالة التخزين: متاح"}</Text><Btn title="تصدير نسخة احتياطية" onPress={shareBackup}/><View style={s.field}><Text style={s.label}>استعادة نسخة JSON</Text><TextInput value={backupText} onChangeText={setBackupText} multiline numberOfLines={5} placeholder="الصق محتوى النسخة الاحتياطية هنا" placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:110}]}/></View><Btn title="استعادة البيانات من النص" onPress={restoreBackup} secondary/></Card><Card><Text style={s.cardTitle}>النسخة الحالية</Text><Text style={s.body}>واجهة تشغيل أولية تشمل المبيعات والمصروفات والمخزون والمستخدمين. لا تُدخل بيانات حساسة أو تعتمد عليها كسجل محاسبي نهائي قبل إعداد النسخ الاحتياطي والصلاحيات.</Text></Card></>;
 
   const deptScreen = <Card><Text style={s.cardTitle}>{screen}</Text><Text style={s.body}>تم إنشاء مدخل لهذا القسم ضمن الهيكل الإداري لجوري. وظائفه التفصيلية ستُبنى على مراحل، مع ربطها بقاعدة البيانات والصلاحيات.</Text></Card>;
 
