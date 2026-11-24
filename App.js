@@ -336,6 +336,7 @@ export default function App() {
       let next={...data,[type]:(data[type]||[]).filter(x=>x.id!==id)};
       if(type==="sales" && record && record.itemId && Number(record.quantity)>0) {
         next.stock=data.stock.map(x=>x.id===record.itemId?{...x,quantity:Number(x.quantity)+Number(record.quantity)}:x);
+        if(record.lotNumber) next.productions=(data.productions||[]).map(p=>p.lotNumber===record.lotNumber?{...p,remainingQuantity:Number(p.remainingQuantity??p.outputQuantity)+Number(record.quantity)}:p);
         next.movements=(data.movements||[]).filter(m=>m.id!==id);
       }
       persist(next);
