@@ -11,7 +11,7 @@ const DEPARTMENTS = [
   ["الإدارة العامة","🏢"],["الإدارة المالية","💰"],["المشروعات والتشغيل","⚙️"],["المبيعات والتسويق","🛒"],
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
-const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], movements:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], movements:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -49,6 +49,11 @@ export default function App() {
   const [productionMaterials,setProductionMaterials] = useState("");
   const [productionExtraCost,setProductionExtraCost] = useState("");
   const [productionNote,setProductionNote] = useState("");
+  const [recipeName,setRecipeName] = useState("");
+  const [recipeProduct,setRecipeProduct] = useState("");
+  const [recipeOutput,setRecipeOutput] = useState("");
+  const [recipeMaterials,setRecipeMaterials] = useState("");
+  const [selectedRecipeId,setSelectedRecipeId] = useState("");
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then(raw => {
@@ -150,7 +155,10 @@ export default function App() {
     if(!productionProduct.trim() || !productionOutput.trim() || !Number.isFinite(output) || output<=0 || !productionMaterials.trim() || !Number.isFinite(extra) || extra<0) {
       Alert.alert("بيانات ناقصة","أدخل اسم المنتج النهائي والكمية والمواد الخام المستخدمة."); return;
     }
-    const lines=productionMaterials.split("\n").map(x=>x.trim()).filter(Boolean);
+    const selectedRecipe=(data.recipes||[]).find(x=>x.id===selectedRecipeId);
+    const lines=selectedRecipe
+      ? selectedRecipe.materials.map(x=>x.itemName+" | "+(Number(x.quantity)*output/Number(selectedRecipe.baseOutput)))
+      : productionMaterials.split("\n").map(x=>x.trim()).filter(Boolean);
     const requirements=[];
     for(const line of lines) {
       const parts=line.split(/[|,،]/).map(x=>x.trim());
@@ -194,8 +202,32 @@ export default function App() {
     const production={id,productId,productName:productionProduct.trim(),outputQuantity:output,materials:requirements,materialCost,extraCost:extra,totalCost,unitCost,note:productionNote.trim(),date};
     const movements=[...(data.movements||[]),...requirements.map((x,i)=>({id:id+"-raw-"+i,itemId:x.itemId,itemName:x.itemName,type:"استهلاك إنتاج",quantity:x.quantity,date})),{id:id+"-out",itemId:productId,itemName:productionProduct.trim(),type:"إنتاج",quantity:output,date}];
     await persist({...data,stock,productions:[...(data.productions||[]),production],movements});
-    setProductionProduct("");setProductionOutput("");setProductionMaterials("");setProductionExtraCost("");setProductionNote("");
+    setProductionProduct("");setProductionOutput("");setProductionMaterials("");setProductionExtraCost("");setProductionNote("");setSelectedRecipeId("");
     Alert.alert("تم تسجيل الإنتاج","تم خصم المواد الخام وإضافة المنتج النهائي إلى المخزون.");
+  };
+
+  const addRecipe = async () => {
+    const base=Number(recipeOutput);
+    if(!recipeName.trim() || !recipeProduct.trim() || !recipeOutput.trim() || !Number.isFinite(base) || base<=0 || !recipeMaterials.trim()) {
+      Alert.alert("بيانات الوصفة ناقصة","أدخل اسم الوصفة والمنتج والكمية الأساسية والمواد الخام."); return;
+    }
+    const lines=recipeMaterials.split("\n").map(x=>x.trim()).filter(Boolean);
+    const materials=[];
+    for(const line of lines) {
+      const parts=line.split(/[|,،]/).map(x=>x.trim());
+      const q=Number(parts[1]);
+      if(parts.length<2 || !parts[0] || !Number.isFinite(q) || q<=0) { Alert.alert("صيغة غير صحيحة","اكتب كل مادة بالشكل: اسم المادة | الكمية."); return; }
+      const item=data.stock.find(x=>x.name.trim().toLowerCase()===parts[0].toLowerCase());
+      if(!item) { Alert.alert("مادة غير موجودة","أضف "+parts[0]+" إلى المخزون أولاً."); return; }
+      if(!(Number(item.unitCost)>0)) { Alert.alert("تكلفة غير مسجلة","سجّل شراء "+item.name+" أولاً."); return; }
+      const prior=materials.find(x=>x.itemId===item.id);
+      if(prior) prior.quantity+=q;
+      else materials.push({itemId:item.id,itemName:item.name,quantity:q});
+    }
+    const recipe={id:"recipe-"+Date.now(),name:recipeName.trim(),productName:recipeProduct.trim(),baseOutput:base,materials};
+    await persist({...data,recipes:[...(data.recipes||[]),recipe]});
+    setRecipeName("");setRecipeProduct("");setRecipeOutput("");setRecipeMaterials("");
+    Alert.alert("تم حفظ الوصفة","أصبحت الوصفة متاحة للاستخدام في دفعات الإنتاج.");
   };
 
   const shareBackup = async () => {
@@ -290,10 +322,18 @@ export default function App() {
 
   const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><View><Text style={s.amount}>{x.quantity}</Text>{x.unitCost? <Text style={s.hint}>متوسط تكلفة الوحدة: {money(x.unitCost)}</Text>:null}</View><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>تقييم المخزون التقريبي</Section><Card><Text style={s.bigValue}>{money(data.stock.reduce((sum,x)=>sum+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text><Text style={s.hint}>القيمة محسوبة من الرصيد الحالي ومتوسط تكلفة الوحدة المسجل، ولا تشمل الأصناف التي لم تُسجل لها تكلفة شراء.</Text></Card><Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"||m.type==="استهلاك إنتاج"?"-":"+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف والشراء والإضافة. متوسط التكلفة والتقييم تقديريان، ويعتمدان على المشتريات المسجلة.</Text></>;
 
-  const productionScreen = <><Section>تسجيل دفعة إنتاج</Section><Text style={s.body}>أدخل المنتج النهائي والمواد الخام. يجب أن تكون المواد الخام مسجلة في المخزون ولها تكلفة شراء.</Text><Card>
-    <Field label="اسم المنتج النهائي" value={productionProduct} onChange={setProductionProduct} placeholder="مثال: صابون TRUST 350 مل"/>
+  const productionScreen = <><Section>الوصفات القياسية</Section><Text style={s.body}>احفظ وصفة بكمية إنتاج أساسية، ثم استخدمها لإعادة حساب احتياجات المواد تلقائياً عند تغيير كمية الدفعة.</Text><Card>
+    <Field label="اسم الوصفة" value={recipeName} onChange={setRecipeName} placeholder="مثال: وصفة صابون TRUST"/>
+    <Field label="اسم المنتج النهائي" value={recipeProduct} onChange={setRecipeProduct}/>
+    <Field label="الكمية الأساسية الناتجة" value={recipeOutput} onChange={setRecipeOutput} keyboardType="decimal-pad"/>
+    <View style={s.field}><Text style={s.label}>المواد الخام للوصفة</Text><TextInput value={recipeMaterials} onChangeText={setRecipeMaterials} multiline numberOfLines={4} placeholder={"صابون خام | 20\nعبوات 350 مل | 50"} placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:100}]}/></View>
+    <Btn title="حفظ الوصفة القياسية" onPress={addRecipe}/>
+  </Card>{(data.recipes||[]).length===0?<Empty>لم تُحفظ وصفات بعد.</Empty>:(data.recipes||[]).map(recipe=><Card key={recipe.id}><Text style={s.cardTitle}>{recipe.name}</Text><Text style={s.hint}>المنتج: {recipe.productName} • الكمية الأساسية: {recipe.baseOutput}</Text><Text style={s.hint}>المواد: {recipe.materials.map(x=>x.itemName+" ("+x.quantity+")").join("، ")}</Text><Btn title="استخدام هذه الوصفة للإنتاج" onPress={()=>{setSelectedRecipeId(recipe.id);setProductionProduct(recipe.productName);setProductionOutput(String(recipe.baseOutput));setProductionMaterials("");}} secondary/></Card>)}
+  <Section>تسجيل دفعة إنتاج</Section><Text style={s.body}>أدخل المنتج النهائي والمواد الخام. يجب أن تكون المواد الخام مسجلة في المخزون ولها تكلفة شراء.</Text><Card>
+    {selectedRecipeId?<Text style={s.status}>الوصفة المختارة: {(data.recipes||[]).find(x=>x.id===selectedRecipeId)?.name} • تُضبط كميات المواد تلقائياً حسب حجم الدفعة</Text>:null}
+    <Field label="اسم المنتج النهائي" value={productionProduct} onChange={v=>{setProductionProduct(v);setSelectedRecipeId("");}} placeholder="مثال: صابون TRUST 350 مل"/>
     <Field label="الكمية المنتجة" value={productionOutput} onChange={setProductionOutput} keyboardType="decimal-pad"/>
-    <View style={s.field}><Text style={s.label}>المواد الخام المستهلكة (مادة في كل سطر)</Text><TextInput value={productionMaterials} onChangeText={setProductionMaterials} multiline numberOfLines={5} placeholder={"مثال:\nصابون خام | 20\nعبوات 350 مل | 50"} placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:120}]}/><Text style={s.hint}>الصيغة: اسم المادة | الكمية. استخدم سطراً مستقلاً لكل مادة.</Text></View>
+    {!selectedRecipeId?<View style={s.field}><Text style={s.label}>المواد الخام المستهلكة (مادة في كل سطر)</Text><TextInput value={productionMaterials} onChangeText={setProductionMaterials} multiline numberOfLines={5} placeholder={"مثال:\nصابون خام | 20\nعبوات 350 مل | 50"} placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:120}]}/><Text style={s.hint}>الصيغة: اسم المادة | الكمية. استخدم سطراً مستقلاً لكل مادة.</Text></View>:<Btn title="إلغاء الوصفة واستخدام مواد يدوية" onPress={()=>setSelectedRecipeId("")} secondary/>}
     <Field label="تكاليف إضافية للدفعة (اختياري)" value={productionExtraCost} onChange={setProductionExtraCost} keyboardType="decimal-pad"/>
     <Field label="ملاحظات (اختياري)" value={productionNote} onChange={setProductionNote}/>
     <Btn title="حفظ دفعة الإنتاج" onPress={addProduction}/>
