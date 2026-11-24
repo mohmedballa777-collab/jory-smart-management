@@ -1290,7 +1290,6 @@ export default function App() {
   </ScrollView></SafeAreaView>;
 
   let body=home;
-  if(["المستخدمون","الإعدادات"].includes(screen) && !canManageOrganization) body=<Card><Text style={s.cardTitle}>صلاحية غير كافية</Text><Text style={s.body}>هذه الشاشة متاحة لمالك المؤسسة أو المدير الإداري فقط.</Text><Btn title="العودة للرئيسية" onPress={()=>go("الرئيسية")}/></Card>;
   if(screen==="المبيعات") body=financeScreen("sales","تسجيل المبيعات","سجّل كل عملية بيع، ويمكنك إدخال كمية المنتج.");
   else if(screen==="المصروفات") body=financeScreen("expenses","تسجيل المصروفات","سجّل مصروفات التشغيل والمشتريات.");
   else if(screen==="المخزون") body=stockScreen;
@@ -1309,6 +1308,7 @@ export default function App() {
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
   else if(screen==="المساعد الذكي") body=<Card><Text style={s.cardTitle}>مساعد جوري الذكي</Text><Text style={s.body}>واجهة المساعد ستُربط بخدمة ذكاء اصطناعي لاحقاً. لا يوجد اتصال ذكاء اصطناعي مفعّل في هذه النسخة.</Text></Card>;
+  if(["المستخدمون","الإعدادات"].includes(screen) && !canManageOrganization) body=<Card><Text style={s.cardTitle}>صلاحية غير كافية</Text><Text style={s.body}>هذه الشاشة متاحة لمالك المؤسسة أو المدير الإداري فقط.</Text><Btn title="العودة للرئيسية" onPress={()=>go("الرئيسية")}/></Card>;
 
   return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><ScrollView contentContainerStyle={s.page}>{header}
     <View style={s.topNav}><Pressable onPress={()=>go("الرئيسية")}><Text style={s.back}>‹ الرئيسية</Text></Pressable><Text style={s.screenTitle}>{screen}</Text></View>
