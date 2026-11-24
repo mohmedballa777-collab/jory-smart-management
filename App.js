@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   SafeAreaView, ScrollView, View, Text, TextInput, StyleSheet,
-  Pressable, Alert, StatusBar, ActivityIndicator
+  Pressable, Alert, StatusBar, ActivityIndicator, Share
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -36,6 +36,7 @@ export default function App() {
   const [note,setNote] = useState("");
   const [itemName,setItemName] = useState("");
   const [itemQty,setItemQty] = useState("");
+  const [outQty,setOutQty] = useState("");
   const [userName,setUserName] = useState("");
   const [userRole,setUserRole] = useState("موظف");
 
@@ -83,6 +84,41 @@ export default function App() {
     await persist({...data,stock}); setItemName(""); setItemQty("");
   };
 
+  const issueStock = async item => {
+    const q=Number(outQty);
+    if(!outQty.trim() || !Number.isFinite(q) || q<=0) {
+      Alert.alert("كمية غير صحيحة","أدخل كمية صرف أكبر من صفر."); return;
+    }
+    const current=data.stock.find(x=>x.id===item.id);
+    if(!current || q>Number(current.quantity)) {
+      Alert.alert("رصيد غير كافٍ","الكمية المطلوبة أكبر من الرصيد المتاح."); return;
+    }
+    const stock=data.stock.map(x=>x.id===item.id?{...x,quantity:Number(x.quantity)-q}:x);
+    const movements=[...(data.movements||[]),{id:Date.now().toString(),itemId:item.id,itemName:item.name,type:"صرف",quantity:q,date:stamp()}];
+    await persist({...data,stock,movements});
+    setOutQty("");
+    Alert.alert("تم الصرف","تم خصم الكمية من رصيد المخزون.");
+  };
+
+  const shareBackup = async () => {
+    try {
+      await Share.share({message:JSON.stringify({exportedAt:stamp(),app:"Jouri",data},null,2),title:"نسخة احتياطية - جوري"});
+    } catch (_) {
+      Alert.alert("تعذر التصدير","لم نتمكن من فتح مشاركة النسخة الاحتياطية.");
+    }
+  };
+
+  const dailyReport = useMemo(() => {
+    const today=new Date().toDateString();
+    const sales=data.sales.filter(x=>new Date(x.date).toDateString()===today);
+    const expenses=data.expenses.filter(x=>new Date(x.date).toDateString()===today);
+    return {
+      sales:sales.reduce((a,x)=>a+Number(x.amount||0),0),
+      expenses:expenses.reduce((a,x)=>a+Number(x.amount||0),0),
+      salesCount:sales.length, expenseCount:expenses.length
+    };
+  },[data]);
+
   const addUser = async () => {
     if(!userName.trim()){Alert.alert("بيانات ناقصة","أدخل اسم المستخدم.");return;}
     await persist({...data,users:[...data.users,{id:Date.now().toString(),name:userName.trim(),role:userRole}]});
@@ -105,7 +141,7 @@ export default function App() {
       <Card><Text style={s.metricLabel}>المصروفات</Text><Text style={s.metricValue}>{money(totals.expenses)}</Text></Card>
     </View>
     <Card><Text style={s.metricLabel}>صافي الفرق (مبيعات - مصروفات)</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>ليس ربحاً محاسبياً نهائياً؛ لا يشمل تكلفة المخزون أو الالتزامات غير المسجلة.</Text></Card>
-    <Section>اختصارات التشغيل</Section>
+    <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
       {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["المستخدمون","المستخدمون","👥"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
@@ -123,11 +159,11 @@ export default function App() {
   </Card><Section>سجل العمليات</Section>
   {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
 
-  const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{x.quantity}</Text><Text style={s.cardTitle}>{x.name}</Text></View></Card>)}<Text style={s.hint}>هذه نسخة أولية: الإضافة تزيد الرصيد فقط، ولا يوجد صرف مخزني أو تكلفة صنف بعد.</Text></>;
+  const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{x.quantity}</Text><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"?"-": "+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف ويُخصم من الرصيد. لم تُضف تكلفة الأصناف أو تقييم المخزون بعد.</Text></>;
 
   const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
 
-  const settingsScreen = <><Section>الإعدادات وحالة البيانات</Section><Card><Text style={s.cardTitle}>حفظ البيانات</Text><Text style={s.body}>الحفظ محلي على الجهاز باستخدام AsyncStorage. لا توجد مزامنة سحابية أو نسخ احتياطي تلقائي حالياً.</Text><Text style={[s.status,{color:storageError?C.red:C.brand}]}>{storageError?"يوجد خطأ في الحفظ":"حالة التخزين: متاح"}</Text></Card><Card><Text style={s.cardTitle}>النسخة الحالية</Text><Text style={s.body}>واجهة تشغيل أولية تشمل المبيعات والمصروفات والمخزون والمستخدمين. لا تُدخل بيانات حساسة أو تعتمد عليها كسجل محاسبي نهائي قبل إعداد النسخ الاحتياطي والصلاحيات.</Text></Card></>;
+  const settingsScreen = <><Section>الإعدادات وحالة البيانات</Section><Card><Text style={s.cardTitle}>حفظ البيانات</Text><Text style={s.body}>الحفظ محلي على الجهاز باستخدام AsyncStorage. لا توجد مزامنة سحابية أو نسخ احتياطي تلقائي حالياً.</Text><Text style={[s.status,{color:storageError?C.red:C.brand}]}>{storageError?"يوجد خطأ في الحفظ":"حالة التخزين: متاح"}</Text><Btn title="تصدير نسخة احتياطية" onPress={shareBackup}/></Card><Card><Text style={s.cardTitle}>النسخة الحالية</Text><Text style={s.body}>واجهة تشغيل أولية تشمل المبيعات والمصروفات والمخزون والمستخدمين. لا تُدخل بيانات حساسة أو تعتمد عليها كسجل محاسبي نهائي قبل إعداد النسخ الاحتياطي والصلاحيات.</Text></Card></>;
 
   const deptScreen = <Card><Text style={s.cardTitle}>{screen}</Text><Text style={s.body}>تم إنشاء مدخل لهذا القسم ضمن الهيكل الإداري لجوري. وظائفه التفصيلية ستُبنى على مراحل، مع ربطها بقاعدة البيانات والصلاحيات.</Text></Card>;
 
