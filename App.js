@@ -95,6 +95,8 @@ export default function App() {
       if(!Number.isFinite(q) || q<=0) { Alert.alert("كمية غير صحيحة","أدخل كمية بيع أكبر من صفر."); return; }
       const item=data.stock.find(x=>x.name.trim().toLowerCase()===name.trim().toLowerCase());
       if(!item) { Alert.alert("الصنف غير موجود","أضف الصنف إلى المخزون أولاً، واستخدم اسم الصنف نفسه عند تسجيل البيع."); return; }
+      const finalChecks=(data.qualityChecks||[]).filter(x=>x.product.trim().toLowerCase()===item.name.trim().toLowerCase() && x.stage==="منتج نهائي").sort((a,b)=>new Date(b.date)-new Date(a.date));
+      if(finalChecks.length && finalChecks[0].decision!=="مقبول") { Alert.alert("البيع موقوف من الجودة","آخر فحص للمنتج "+item.name+" نتيجته: "+finalChecks[0].decision+". لا تسجل البيع حتى يُعاد الفحص ويُعتمد المنتج."); return; }
       if(q>Number(item.quantity)) { Alert.alert("رصيد غير كافٍ", "المتاح من "+item.name+" هو "+item.quantity+" فقط."); return; }
       const unitCost=Number(item.unitCost)||0;
       entry={...entry,itemId:item.id,unitCost,cogs:q*unitCost,grossProfit:v-(q*unitCost)};
@@ -176,6 +178,8 @@ export default function App() {
       if(!item) { Alert.alert("مادة غير موجودة","المادة "+parts[0]+" غير موجودة في المخزون."); return; }
       if(Number(item.quantity)<qty) { Alert.alert("رصيد غير كافٍ","المتاح من "+item.name+" هو "+item.quantity+" والمطلوب "+qty+"."); return; }
       if(!(Number(item.unitCost)>0)) { Alert.alert("تكلفة غير مسجلة","سجّل شراء المادة "+item.name+" أولاً حتى تُحسب تكلفة الإنتاج."); return; }
+      const rawChecks=(data.qualityChecks||[]).filter(x=>x.product.trim().toLowerCase()===item.name.trim().toLowerCase() && x.stage==="استلام مواد خام").sort((a,b)=>new Date(b.date)-new Date(a.date));
+      if(rawChecks.length && rawChecks[0].decision==="مرفوض") { Alert.alert("المادة مرفوضة من الجودة","المادة "+item.name+" عليها آخر نتيجة فحص مرفوضة. أعد الفحص واعتمدها قبل الإنتاج."); return; }
       requirements.push({itemId:item.id,itemName:item.name,quantity:qty,unitCost:Number(item.unitCost),cost:qty*Number(item.unitCost)});
     }
     const combined=[];
@@ -206,7 +210,7 @@ export default function App() {
     });
     if(!existing) stock=[{id:productId,name:productionProduct.trim(),quantity:output,unitCost},...stock];
     const date=stamp(), id="prod-"+Date.now().toString();
-    const production={id,productId,productName:productionProduct.trim(),outputQuantity:output,materials:requirements,materialCost,extraCost:extra,totalCost,unitCost,note:productionNote.trim(),date};
+    const production={id,productId,productName:productionProduct.trim(),outputQuantity:output,materials:requirements,materialCost,extraCost:extra,totalCost,unitCost,note:productionNote.trim(),qualityStatus:"بانتظار فحص المنتج النهائي",date};
     const movements=[...(data.movements||[]),...requirements.map((x,i)=>({id:id+"-raw-"+i,itemId:x.itemId,itemName:x.itemName,type:"استهلاك إنتاج",quantity:x.quantity,date})),{id:id+"-out",itemId:productId,itemName:productionProduct.trim(),type:"إنتاج",quantity:output,date}];
     await persist({...data,stock,productions:[...(data.productions||[]),production],movements});
     setProductionProduct("");setProductionOutput("");setProductionMaterials("");setProductionExtraCost("");setProductionNote("");setSelectedRecipeId("");
