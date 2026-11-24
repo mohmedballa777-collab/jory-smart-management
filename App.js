@@ -311,11 +311,11 @@ export default function App() {
 
       autoSyncLock.current=true;
       const {data:latest,error:readError}=await supabase.from("jory_business_data")
-        .select("revision")
+        .select("revision,updated_at")
         .eq("organization_id",organizationId)
         .maybeSingle();
       if(readError) throw readError;
-      if(!latest || Number(latest.revision)!==Number(meta.revision)) {
+      if(!latest || Number(latest.revision)!==Number(meta.revision) || latest.updated_at!==meta.updatedAt) {
         setCloudChecked(false);
         setCloudStatus("تعارض في المزامنة التلقائية: النسخة السحابية تغيرت على جهاز آخر. لم يتم استبدال أي بيانات؛ راجع النسختين يدوياً.");
         return;
@@ -326,6 +326,7 @@ export default function App() {
         .update({data:snapshot})
         .eq("organization_id",organizationId)
         .eq("revision",Number(meta.revision))
+        .eq("updated_at",meta.updatedAt)
         .select("revision,updated_at")
         .maybeSingle();
       if(updateError) throw updateError;
@@ -460,13 +461,13 @@ export default function App() {
           setCloudStatus("جارٍ التحقق من النسخة السحابية قبل الرفع...");
           try {
             const {data:latest,error:readError}=await supabase.from("jory_business_data")
-              .select("revision")
+              .select("revision,updated_at")
               .eq("organization_id",organizationId)
               .maybeSingle();
             if(readError) throw readError;
 
             if(latest) {
-              if(cloudRevision===null || Number(latest.revision)!==cloudRevision) {
+              if(cloudRevision===null || (Number(latest.revision)!==cloudRevision || latest.updated_at!==cloudUpdatedAt)) {
                 setCloudChecked(false);
                 setCloudStatus("تعارض: النسخة السحابية تغيرت منذ آخر فحص. افحصها مجدداً قبل أي رفع.");
                 Alert.alert("تم إيقاف الرفع","هناك نسخة سحابية أحدث. لم يتم استبدال أي بيانات.");
@@ -476,6 +477,7 @@ export default function App() {
                 .update({data:localSnapshot})
                 .eq("organization_id",organizationId)
                 .eq("revision",cloudRevision)
+                .eq("updated_at",cloudUpdatedAt)
                 .select("revision,updated_at")
                 .maybeSingle();
               if(error) throw error;
@@ -542,7 +544,7 @@ export default function App() {
               .eq("organization_id",organizationId)
               .maybeSingle();
             if(readError) throw readError;
-            if(!latest || Number(latest.revision)!==cloudRevision) {
+            if(!latest || (Number(latest.revision)!==cloudRevision || latest.updated_at!==cloudUpdatedAt)) {
               if(latest && latest.data && typeof latest.data==="object" && !Array.isArray(latest.data)) {
                 setCloudRevision(Number(latest.revision));
                 setCloudRemoteData({...INITIAL,...latest.data});
