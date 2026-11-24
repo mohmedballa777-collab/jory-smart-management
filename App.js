@@ -505,7 +505,7 @@ export default function App() {
                 .single();
               if(error) throw error;
               setCloudRevision(Number(saved.revision));
-              setCloudRemoteData({...data});
+              setCloudRemoteData({...localSnapshot});
               setCloudUpdatedAt(saved.updated_at||"");
               await AsyncStorage.setItem(syncMetaKey,JSON.stringify({revision:Number(saved.revision),updatedAt:saved.updated_at||""}));
               await AsyncStorage.removeItem(pendingSyncKey);
