@@ -11,7 +11,7 @@ const DEPARTMENTS = [
   ["الإدارة العامة","🏢"],["الإدارة المالية","💰"],["المشروعات والتشغيل","⚙️"],["المبيعات والتسويق","🛒"],
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
-const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], staff:[], attendance:[], payrollPayments:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], staff:[], attendance:[], payrollPayments:[], tasks:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -78,6 +78,12 @@ export default function App() {
   const [attendanceNote,setAttendanceNote] = useState("");
   const [payrollMonth,setPayrollMonth] = useState(new Date().toISOString().slice(0,7));
   const [payrollPayAmount,setPayrollPayAmount] = useState("");
+  const [taskTitle,setTaskTitle] = useState("");
+  const [taskDescription,setTaskDescription] = useState("");
+  const [taskDepartment,setTaskDepartment] = useState("الإدارة العامة");
+  const [taskAssignee,setTaskAssignee] = useState("");
+  const [taskDueDate,setTaskDueDate] = useState(new Date().toISOString().slice(0,10));
+  const [taskPriority,setTaskPriority] = useState("متوسطة");
   const [paymentCustomerId,setPaymentCustomerId] = useState("");
   const [paymentAmount,setPaymentAmount] = useState("");
   const [qcProduct,setQcProduct] = useState("");
@@ -430,6 +436,19 @@ export default function App() {
   const previewHasIssue=productionPreview.some(x=>x.available<x.required || x.unitCost<=0);
   const previewTotal=previewMaterialCost+(Number(productionExtraCost)||0);
 
+  const addTask = async () => {
+    if(!taskTitle.trim()){Alert.alert("بيانات ناقصة","اكتب عنوان المهمة.");return;}
+    if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(taskDueDate)){Alert.alert("التاريخ غير صحيح","اكتب الموعد بصيغة YYYY-MM-DD.");return;}
+    const employee=(data.staff||[]).find(x=>x.id===taskAssignee);
+    const task={id:"task-"+Date.now(),title:taskTitle.trim(),description:taskDescription.trim(),department:taskDepartment,assigneeId:employee?.id||"",assigneeName:employee?.name||"غير مسند",dueDate:taskDueDate,priority:taskPriority,status:"جديدة",createdAt:stamp(),updatedAt:stamp()};
+    await persist({...data,tasks:[task,...(data.tasks||[])]});
+    setTaskTitle("");setTaskDescription("");setTaskAssignee("");
+  };
+  const updateTaskStatus = async (id,status) => {
+    const tasks=(data.tasks||[]).map(x=>x.id===id?{...x,status,updatedAt:stamp()}:x);
+    await persist({...data,tasks});
+  };
+
   const addStaff = async () => {
     const salary=Number(staffSalary);
     if(!staffName.trim() || !staffSalary.trim() || !Number.isFinite(salary) || salary<=0) { Alert.alert("بيانات ناقصة","أدخل اسم الموظف والراتب الشهري الصحيح."); return; }
@@ -643,6 +662,28 @@ export default function App() {
 
   const purchasesScreen = <><Section>تسجيل مشتريات جديدة</Section><Text style={s.body}>أدخل التكلفة الإجمالية للكمية المشتراة. سيُحدّث التطبيق متوسط تكلفة الوحدة المرجّح للصنف.</Text><Card><Field label="اسم الصنف" value={purchaseItem} onChange={setPurchaseItem}/><Field label="الكمية المشتراة" value={purchaseQty} onChange={setPurchaseQty} keyboardType="decimal-pad"/><Field label="إجمالي تكلفة الشراء (ج.س)" value={purchaseCost} onChange={setPurchaseCost} keyboardType="decimal-pad"/><Field label="المورد (اختياري)" value={supplier} onChange={setSupplier}/><Field label="المبلغ المدفوع الآن (اتركه فارغاً للسداد الكامل)" value={purchasePaid} onChange={setPurchasePaid} keyboardType="decimal-pad"/><Btn title="حفظ المشتريات وتحديث المخزون" onPress={addPurchase}/></Card><Section>سجل المشتريات</Section>{(data.purchases||[]).length===0?<Empty/>:(data.purchases||[]).slice().reverse().map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.totalCost)}</Text><Text style={s.cardTitle}>{p.itemName}</Text></View><Text style={s.hint}>الكمية: {p.quantity} • تكلفة الوحدة: {money(p.unitCost)}</Text>{p.supplier?<Text style={s.hint}>المورد: {p.supplier}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>; 
 
+  const tasksScreen = <>
+    <Section>إنشاء تكليف جديد</Section>
+    <Card><Field label="عنوان المهمة" value={taskTitle} onChange={setTaskTitle}/><Field label="تفاصيل المهمة" value={taskDescription} onChange={setTaskDescription}/>
+    <Text style={s.label}>الإدارة المسؤولة</Text><View style={s.roleRow}>{DEPARTMENTS.map(x=><Pressable key={x[0]} onPress={()=>setTaskDepartment(x[0])} style={[s.roleChip,taskDepartment===x[0]&&s.roleSelected]}><Text style={taskDepartment===x[0]?s.roleSelectedText:s.roleText}>{x[0]}</Text></Pressable>)}</View>
+    <Text style={s.label}>الموظف المسؤول</Text><View style={s.roleRow}><Pressable onPress={()=>setTaskAssignee("")} style={[s.roleChip,!taskAssignee&&s.roleSelected]}><Text style={!taskAssignee?s.roleSelectedText:s.roleText}>غير مسند</Text></Pressable>{(data.staff||[]).map(x=><Pressable key={x.id} onPress={()=>setTaskAssignee(x.id)} style={[s.roleChip,taskAssignee===x.id&&s.roleSelected]}><Text style={taskAssignee===x.id?s.roleSelectedText:s.roleText}>{x.name}</Text></Pressable>)}</View>
+    <Field label="الموعد النهائي YYYY-MM-DD" value={taskDueDate} onChange={setTaskDueDate}/>
+    <Text style={s.label}>الأولوية</Text><View style={s.roleRow}>{["منخفضة","متوسطة","عالية","عاجلة"].map(x=><Pressable key={x} onPress={()=>setTaskPriority(x)} style={[s.roleChip,taskPriority===x&&s.roleSelected]}><Text style={taskPriority===x?s.roleSelectedText:s.roleText}>{x}</Text></Pressable>)}</View>
+    <Btn title="إضافة المهمة" onPress={addTask}/></Card>
+    <Section>ملخص المهام</Section>
+    <View style={s.metrics}><Card><Text style={s.metricLabel}>الإجمالي</Text><Text style={s.metricValue}>{(data.tasks||[]).length}</Text></Card><Card><Text style={s.metricLabel}>مكتملة</Text><Text style={s.metricValue}>{(data.tasks||[]).filter(x=>x.status==="مكتملة").length}</Text></Card></View>
+    <View style={s.metrics}><Card><Text style={s.metricLabel}>قيد التنفيذ</Text><Text style={s.metricValue}>{(data.tasks||[]).filter(x=>x.status==="قيد التنفيذ").length}</Text></Card><Card><Text style={s.metricLabel}>متأخرة</Text><Text style={s.metricValue}>{(data.tasks||[]).filter(x=>x.status!=="مكتملة"&&x.dueDate<new Date().toISOString().slice(0,10)).length}</Text></Card></View>
+    <Section>قائمة التكليفات</Section>
+    {(data.tasks||[]).length===0?<Empty>لا توجد مهام بعد. أضف أول تكليف.</Empty>:[...(data.tasks||[])].sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).map(task=><Card key={task.id}>
+      <View style={s.row}><Text style={s.cardTitle}>{task.title}</Text><Text style={s.amount}>{task.priority}</Text></View>
+      {task.description?<Text style={s.body}>{task.description}</Text>:null}
+      <Text style={s.hint}>{task.department} • المسؤول: {task.assigneeName}</Text>
+      <Text style={s.hint}>الموعد: {task.dueDate} • الحالة: {task.status}</Text>
+      {task.status!=="مكتملة"&&task.dueDate<new Date().toISOString().slice(0,10)?<Text style={{color:C.red,fontWeight:"700"}}>متأخرة عن الموعد</Text>:null}
+      <View style={s.roleRow}>{["جديدة","قيد التنفيذ","مكتملة"].map(st=><Pressable key={st} onPress={()=>updateTaskStatus(task.id,st)} style={[s.roleChip,task.status===st&&s.roleSelected]}><Text style={task.status===st?s.roleSelectedText:s.roleText}>{st}</Text></Pressable>)}</View>
+    </Card>)}
+  </>;
+
   const hrScreen = <>
     <Section>إضافة موظف</Section>
     <Card><Field label="اسم الموظف" value={staffName} onChange={setStaffName}/><Field label="المسمى الوظيفي" value={staffJob} onChange={setStaffJob}/><Field label="الراتب الشهري بالجنيه" value={staffSalary} onChange={setStaffSalary} keyboardType="decimal-pad"/><Btn title="حفظ الموظف" onPress={addStaff}/></Card>
@@ -693,13 +734,13 @@ export default function App() {
   else if(screen==="الخزينة") body=cashScreen;
   else if(screen==="متابعة TRUST") body=trustDashboard;
   else if(screen==="الموظفون والرواتب") body=hrScreen;
+  else if(screen==="المهام") body=tasksScreen;
   else if(screen==="التقارير") body=reportScreen;
   else if(screen==="العملاء") body=customersScreen;
   else if(screen==="الموردون") body=suppliersScreen;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
-  else if(screen==="المهام") body=<Card><Text style={s.cardTitle}>المهام</Text><Empty>سيتم تفعيل إدارة المهام في المرحلة التالية.</Empty></Card>;
   else if(screen==="المساعد الذكي") body=<Card><Text style={s.cardTitle}>مساعد جوري الذكي</Text><Text style={s.body}>واجهة المساعد ستُربط بخدمة ذكاء اصطناعي لاحقاً. لا يوجد اتصال ذكاء اصطناعي مفعّل في هذه النسخة.</Text></Card>;
 
   return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><ScrollView contentContainerStyle={s.page}>{header}
