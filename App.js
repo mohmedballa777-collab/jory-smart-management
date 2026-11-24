@@ -44,6 +44,9 @@ export default function App() {
   const [purchaseQty,setPurchaseQty] = useState("");
   const [purchaseCost,setPurchaseCost] = useState("");
   const [supplier,setSupplier] = useState("");
+  const [purchasePaid,setPurchasePaid] = useState("");
+  const [supplierPaymentName,setSupplierPaymentName] = useState("");
+  const [supplierPaymentAmount,setSupplierPaymentAmount] = useState("");
   const [productionProduct,setProductionProduct] = useState("");
   const [productionOutput,setProductionOutput] = useState("");
   const [productionMaterials,setProductionMaterials] = useState("");
@@ -161,6 +164,25 @@ export default function App() {
     Alert.alert("تم التحصيل","تم توزيع المبلغ على أقدم الفواتير المستحقة.");
   };
 
+  const collectSupplierPayment = async () => {
+    const value=Number(supplierPaymentAmount), supplierName=supplierPaymentName.trim();
+    if(!supplierName || !supplierPaymentAmount.trim() || !Number.isFinite(value) || value<=0) { Alert.alert("بيانات غير مكتملة","أدخل اسم المورد ومبلغ سداد صحيحاً."); return; }
+    const bills=(data.purchases||[]).filter(x=>(x.supplier||"مورد غير محدد").trim().toLowerCase()===supplierName.toLowerCase() && Number(x.dueAmount)>0).slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+    const due=bills.reduce((sum,x)=>sum+Number(x.dueAmount||0),0);
+    if(!bills.length) { Alert.alert("لا توجد مديونية","لا توجد فواتير مستحقة لهذا المورد."); return; }
+    if(value>due) { Alert.alert("المبلغ أكبر من المستحق","إجمالي مستحقات المورد "+money(due)+"."); return; }
+    let remaining=value;
+    const purchases=(data.purchases||[]).map(p=>{
+      if((p.supplier||"مورد غير محدد").trim().toLowerCase()!==supplierName.toLowerCase() || remaining<=0 || Number(p.dueAmount)<=0) return p;
+      const applied=Math.min(remaining,Number(p.dueAmount)); remaining-=applied;
+      return {...p,paidAmount:Number(p.paidAmount||0)+applied,dueAmount:Number(p.dueAmount)-applied};
+    });
+    const receipt={id:"supplier-payment-"+Date.now(),supplier:supplierName,amount:value,date:stamp()};
+    await persist({...data,purchases,supplierPayments:[receipt,...(data.supplierPayments||[])]});
+    setSupplierPaymentAmount("");
+    Alert.alert("تم السداد","تم توزيع السداد على أقدم فواتير المورد.");
+  };
+
   const addStock = async () => {
     const q=Number(itemQty);
     if(!itemName.trim() || !itemQty.trim() || !Number.isFinite(q) || q<=0) {
@@ -190,10 +212,12 @@ export default function App() {
       ? data.stock.map(x=>x.id===itemId?{...x,quantity:oldQty+q,unitCost:newUnitCost}:x)
       : [{id:itemId,name:purchaseItem.trim(),quantity:q,unitCost},...data.stock];
     const date=stamp();
-    const purchase={id:date+Math.random().toString(36).slice(2,6),itemId,itemName:purchaseItem.trim(),quantity:q,totalCost:cost,unitCost,supplier:supplier.trim(),date};
+    const paid=purchasePaid.trim()===""?cost:Number(purchasePaid);
+    if(!Number.isFinite(paid)||paid<0||paid>cost) { Alert.alert("المبلغ المدفوع غير صحيح","أدخل مبلغاً من صفر إلى إجمالي تكلفة الشراء."); return; }
+    const purchase={id:date+Math.random().toString(36).slice(2,6),itemId,itemName:purchaseItem.trim(),quantity:q,totalCost:cost,unitCost,supplier:supplier.trim()||"مورد غير محدد",paidAmount:paid,dueAmount:cost-paid,date};
     const movements=[...(data.movements||[]),{id:purchase.id,itemId,itemName:purchaseItem.trim(),type:"شراء",quantity:q,date}];
     await persist({...data,stock,purchases:[...(data.purchases||[]),purchase],movements});
-    setPurchaseItem("");setPurchaseQty("");setPurchaseCost("");setSupplier("");
+    setPurchaseItem("");setPurchaseQty("");setPurchaseCost("");setSupplier("");setPurchasePaid("");
     Alert.alert("تم تسجيل الشراء","تم تحديث رصيد المخزون ومتوسط تكلفة الوحدة.");
   };
 
@@ -402,7 +426,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
@@ -426,6 +450,21 @@ export default function App() {
     {(data.receipts||[]).length===0?<Empty>لا توجد تحصيلات مسجلة.</Empty>:(data.receipts||[]).slice(0,10).map(r=><Card key={r.id}><View style={s.row}><Text style={s.amount}>{money(r.amount)}</Text><Text style={s.cardTitle}>{r.customerName}</Text></View><Text style={s.hint}>{new Date(r.date).toLocaleString("ar")}</Text></Card>)}
   </>;
 
+  const suppliersScreen = <>
+    <Section>سداد مستحقات الموردين</Section>
+    <Card><Field label="اسم المورد" value={supplierPaymentName} onChange={setSupplierPaymentName} placeholder="اكتب الاسم كما في فاتورة الشراء"/><Field label="مبلغ السداد بالجنيه" value={supplierPaymentAmount} onChange={setSupplierPaymentAmount} keyboardType="decimal-pad"/><Btn title="تسجيل سداد المورد" onPress={collectSupplierPayment}/></Card>
+    <Section>أرصدة الموردين</Section>
+    {Array.from(new Set((data.purchases||[]).map(x=>x.supplier||"مورد غير محدد"))).length===0?<Empty>لا توجد مشتريات مسجلة.</Empty>:Array.from(new Set((data.purchases||[]).map(x=>x.supplier||"مورد غير محدد"))).map(name=>{
+      const bills=(data.purchases||[]).filter(x=>(x.supplier||"مورد غير محدد")===name);
+      const total=bills.reduce((sum,x)=>sum+Number(x.totalCost||0),0);
+      const paid=bills.reduce((sum,x)=>sum+Number(x.paidAmount??x.totalCost),0);
+      const due=bills.reduce((sum,x)=>sum+Number(x.dueAmount||0),0);
+      return <Card key={name}><Text style={s.cardTitle}>{name}</Text><View style={s.metrics}><View><Text style={s.metricLabel}>إجمالي المشتريات</Text><Text style={s.metricValue}>{money(total)}</Text></View><View><Text style={s.metricLabel}>المدفوع</Text><Text style={s.metricValue}>{money(paid)}</Text></View></View><Text style={[s.bigValue,{color:due>0?C.red:C.brand}]}>المتبقي: {money(due)}</Text><Text style={s.hint}>عدد الفواتير: {bills.length}</Text></Card>;
+    })}
+    <Section>آخر السداديات</Section>
+    {(data.supplierPayments||[]).length===0?<Empty>لا توجد سداديات مسجلة.</Empty>:(data.supplierPayments||[]).slice(0,10).map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.amount)}</Text><Text style={s.cardTitle}>{p.supplier}</Text></View><Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}
+  </>;
+
   const reportScreen = <>
     <Section>الملخص المالي</Section>
     <View style={s.metrics}>
@@ -434,6 +473,7 @@ export default function App() {
     </View>
     <Card><Text style={s.metricLabel}>تكلفة البضاعة المسجلة</Text><Text style={s.metricValue}>{money(totals.cogs)}</Text><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(totals.gross)}</Text><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text></Card>
     <Card><Text style={s.metricLabel}>إجمالي مديونيات العملاء</Text><Text style={[s.bigValue,{color:C.red}]}>{money((data.sales||[]).reduce((sum,x)=>sum+Number(x.dueAmount||0),0))}</Text><Text style={s.hint}>المبالغ المتبقية على فواتير العملاء المسجلين.</Text></Card>
+    <Card><Text style={s.metricLabel}>مستحقات الموردين</Text><Text style={[s.bigValue,{color:C.red}]}>{money((data.purchases||[]).reduce((sum,x)=>sum+Number(x.dueAmount||0),0))}</Text></Card>
     <Section>مؤشرات التشغيل</Section>
     <View style={s.metrics}>
       <Card><Text style={s.metricLabel}>أصناف المخزون</Text><Text style={s.metricValue}>{data.stock.length}</Text></Card>
@@ -487,7 +527,7 @@ export default function App() {
     <Btn title="حفظ دفعة الإنتاج" onPress={addProduction}/>
   </Card><Section>سجل دفعات الإنتاج</Section>{(data.productions||[]).length===0?<Empty/>:(data.productions||[]).slice().reverse().map(p=><Card key={p.id}><Text style={s.cardTitle}>{p.productName}</Text><Text style={s.hint}>التشغيلة: {p.lotNumber||"قديمة"} • المتبقي: {p.remainingQuantity??p.outputQuantity} • الجودة: {p.qualityStatus||"بانتظار الفحص"}</Text><Text style={s.hint}>الإنتاج: {p.outputQuantity} • تكلفة الدفعة: {money(p.totalCost)}</Text><Text style={s.hint}>تكلفة الوحدة المنتجة: {money(p.unitCost)}</Text><Text style={s.hint}>المواد: {(p.materials||[]).map(m=>m.itemName+" ("+m.quantity+")").join("، ")}</Text>{p.note?<Text style={s.hint}>{p.note}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>;
 
-  const purchasesScreen = <><Section>تسجيل مشتريات جديدة</Section><Text style={s.body}>أدخل التكلفة الإجمالية للكمية المشتراة. سيُحدّث التطبيق متوسط تكلفة الوحدة المرجّح للصنف.</Text><Card><Field label="اسم الصنف" value={purchaseItem} onChange={setPurchaseItem}/><Field label="الكمية المشتراة" value={purchaseQty} onChange={setPurchaseQty} keyboardType="decimal-pad"/><Field label="إجمالي تكلفة الشراء (ج.س)" value={purchaseCost} onChange={setPurchaseCost} keyboardType="decimal-pad"/><Field label="المورد (اختياري)" value={supplier} onChange={setSupplier}/><Btn title="حفظ المشتريات وتحديث المخزون" onPress={addPurchase}/></Card><Section>سجل المشتريات</Section>{(data.purchases||[]).length===0?<Empty/>:(data.purchases||[]).slice().reverse().map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.totalCost)}</Text><Text style={s.cardTitle}>{p.itemName}</Text></View><Text style={s.hint}>الكمية: {p.quantity} • تكلفة الوحدة: {money(p.unitCost)}</Text>{p.supplier?<Text style={s.hint}>المورد: {p.supplier}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>; 
+  const purchasesScreen = <><Section>تسجيل مشتريات جديدة</Section><Text style={s.body}>أدخل التكلفة الإجمالية للكمية المشتراة. سيُحدّث التطبيق متوسط تكلفة الوحدة المرجّح للصنف.</Text><Card><Field label="اسم الصنف" value={purchaseItem} onChange={setPurchaseItem}/><Field label="الكمية المشتراة" value={purchaseQty} onChange={setPurchaseQty} keyboardType="decimal-pad"/><Field label="إجمالي تكلفة الشراء (ج.س)" value={purchaseCost} onChange={setPurchaseCost} keyboardType="decimal-pad"/><Field label="المورد (اختياري)" value={supplier} onChange={setSupplier}/><Field label="المبلغ المدفوع الآن (اتركه فارغاً للسداد الكامل)" value={purchasePaid} onChange={setPurchasePaid} keyboardType="decimal-pad"/><Btn title="حفظ المشتريات وتحديث المخزون" onPress={addPurchase}/></Card><Section>سجل المشتريات</Section>{(data.purchases||[]).length===0?<Empty/>:(data.purchases||[]).slice().reverse().map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.totalCost)}</Text><Text style={s.cardTitle}>{p.itemName}</Text></View><Text style={s.hint}>الكمية: {p.quantity} • تكلفة الوحدة: {money(p.unitCost)}</Text>{p.supplier?<Text style={s.hint}>المورد: {p.supplier}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>; 
 
   const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
 
@@ -517,6 +557,7 @@ export default function App() {
   else if(screen==="الجودة") body=qualityScreen;
   else if(screen==="التقارير") body=reportScreen;
   else if(screen==="العملاء") body=customersScreen;
+  else if(screen==="الموردون") body=suppliersScreen;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
