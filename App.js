@@ -68,6 +68,7 @@ export default function App() {
   const [newCustomerPhone,setNewCustomerPhone] = useState("");
   const [saleCustomerName,setSaleCustomerName] = useState("");
   const [salePaid,setSalePaid] = useState("");
+  const [saleProject,setSaleProject] = useState("TRUST - الصابون");
   const [paymentCustomerId,setPaymentCustomerId] = useState("");
   const [paymentAmount,setPaymentAmount] = useState("");
   const [qcProduct,setQcProduct] = useState("");
@@ -111,7 +112,7 @@ export default function App() {
       if(saleCustomerName.trim() && !customer) { Alert.alert("العميل غير مسجل","أضف العميل أولاً من صفحة العملاء أو اترك الحقل فارغاً."); return; }
       const paid=salePaid.trim()===""?v:Number(salePaid);
       if(!Number.isFinite(paid)||paid<0||paid>v) { Alert.alert("المبلغ المحصل غير صحيح","أدخل مبلغاً من صفر إلى قيمة الفاتورة."); return; }
-      entry={...entry,customerId:customer?.id,customerName:customer?.name||"بيع نقدي",paidAmount:paid,dueAmount:v-paid};
+      entry={...entry,customerId:customer?.id,customerName:customer?.name||"بيع نقدي",paidAmount:paid,dueAmount:v-paid,project:saleProject.trim()||"غير محدد"};
     }
     let next={...data,[type]:[entry,...data[type]]};
     const cashAmount=type==="sales"?Number(entry.paidAmount??entry.amount):type==="expenses"?Number(entry.amount):0;
@@ -386,7 +387,7 @@ export default function App() {
 
   const trustDaySummary = useMemo(() => {
     const sameDay=x=>String(x.date||"").slice(0,10)===trustReportDay;
-    const sales=(data.sales||[]).filter(sameDay);
+    const sales=(data.sales||[]).filter(x=>sameDay(x) && (x.project||"غير محدد")==="TRUST - الصابون");
     const expenses=(data.expenses||[]).filter(x=>sameDay(x) && (x.project||"عام")==="TRUST - الصابون");
     const production=(data.productions||[]).filter(sameDay);
     const revenue=sales.reduce((sum,x)=>sum+Number(x.amount||0),0);
@@ -508,7 +509,7 @@ export default function App() {
   const trustDashboard = <>
     <Section>لوحة متابعة TRUST اليومية</Section>
     <Card><Text style={s.label}>تاريخ التقرير</Text><Field label="التاريخ بصيغة YYYY-MM-DD" value={trustReportDay} onChange={setTrustReportDay} placeholder="2026-11-24"/></Card>
-    <View style={s.metrics}><Card><Text style={s.metricLabel}>إجمالي المبيعات</Text><Text style={s.metricValue}>{money(trustDaySummary.revenue)}</Text><Text style={s.hint}>عدد الفواتير: {trustDaySummary.sales.length}</Text></Card><Card><Text style={s.metricLabel}>المبالغ المحصلة</Text><Text style={s.metricValue}>{money(trustDaySummary.collected)}</Text></Card></View>
+    <View style={s.metrics}><Card><Text style={s.metricLabel}>إجمالي المبيعات</Text><Text style={s.metricValue}>{money(trustDaySummary.revenue)}</Text><Text style={s.hint}>عدد فواتير TRUST: {trustDaySummary.sales.length}</Text></Card><Card><Text style={s.metricLabel}>المبالغ المحصلة</Text><Text style={s.metricValue}>{money(trustDaySummary.collected)}</Text></Card></View>
     <View style={s.metrics}><Card><Text style={s.metricLabel}>تكلفة البضاعة</Text><Text style={s.metricValue}>{money(trustDaySummary.cogs)}</Text></Card><Card><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(trustDaySummary.gross)}</Text></Card></View>
     <View style={s.metrics}><Card><Text style={s.metricLabel}>مصروفات TRUST</Text><Text style={s.metricValue}>{money(trustDaySummary.expenseTotal)}</Text><Text style={s.hint}>عدد العمليات: {trustDaySummary.expenses.length}</Text></Card><Card><Text style={s.metricLabel}>صافي اليوم التقديري</Text><Text style={[s.bigValue,{color:trustDaySummary.net>=0?C.brand:C.red}]}>{money(trustDaySummary.net)}</Text></Card></View>
     <Card><Text style={s.metricLabel}>دفعات الإنتاج</Text><Text style={s.bigValue}>{trustDaySummary.production.length}</Text><Text style={s.hint}>إجمالي الكمية المنتجة: {trustDaySummary.production.reduce((sum,x)=>sum+Number(x.outputQuantity||0),0)}</Text></Card>
@@ -571,13 +572,13 @@ export default function App() {
     <Field label="الوصف" value={name} onChange={setName} placeholder={type==="sales"?"مثال: بيع صابون TRUST":"مثال: شراء عبوات"}/>
     <Field label="المبلغ بالجنيه السوداني" value={amount} onChange={setAmount} keyboardType="decimal-pad"/>
     {type==="expenses"?<><Field label="تصنيف المصروف" value={expenseCategory} onChange={setExpenseCategory} placeholder="تشغيل، نقل، أجور، تسويق..."/><Field label="مركز التكلفة / الإدارة" value={expenseCenter} onChange={setExpenseCenter} placeholder="الإنتاج، المبيعات، الإدارة..."/><Field label="المشروع" value={expenseProject} onChange={setExpenseProject} placeholder="TRUST - الصابون أو عام"/></>:null}
-    {type==="sales"?<><Field label="العميل المسجل (اختياري)" value={saleCustomerName} onChange={setSaleCustomerName} placeholder="اكتب اسم العميل المسجل"/><Field label="المبلغ المحصل الآن (اتركه فارغاً للسداد الكامل)" value={salePaid} onChange={setSalePaid} keyboardType="decimal-pad"/></>:null}
+    {type==="sales"?<><Field label="المشروع" value={saleProject} onChange={setSaleProject} placeholder="TRUST - الصابون"/><Field label="العميل المسجل (اختياري)" value={saleCustomerName} onChange={setSaleCustomerName} placeholder="اكتب اسم العميل المسجل"/><Field label="المبلغ المحصل الآن (اتركه فارغاً للسداد الكامل)" value={salePaid} onChange={setSalePaid} keyboardType="decimal-pad"/></>:null}
     <Field label="الكمية (اختياري)" value={quantity} onChange={setQuantity} keyboardType="decimal-pad"/>
     {type==="sales" && quantity.trim() && (data.productions||[]).some(x=>x.productName.trim().toLowerCase()===name.trim().toLowerCase())?<Field label="رقم تشغيلة المنتج" value={saleLot} onChange={setSaleLot} placeholder="أدخل رقم التشغيلة"/>:null}
     <Field label="ملاحظات (اختياري)" value={note} onChange={setNote}/>
     <Btn title="حفظ العملية" onPress={()=>addFinancial(type)}/>
   </Card><Section>سجل العمليات</Section>
-  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.cogs!==undefined?<Text style={s.hint}>تكلفة البضاعة: {money(x.cogs)} • الربح الإجمالي: {money(x.grossProfit)}</Text>:null}{type==="sales"?<Text style={s.hint}>العميل: {x.customerName||"بيع نقدي"} • المحصل: {money(x.paidAmount??x.amount)} • المتبقي: {money(x.dueAmount||0)}</Text>:null}{type==="expenses"?<Text style={s.hint}>التصنيف: {x.category||"غير مصنف"} • مركز التكلفة: {x.costCenter||"عام"} • المشروع: {x.project||"عام"}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
+  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.cogs!==undefined?<Text style={s.hint}>تكلفة البضاعة: {money(x.cogs)} • الربح الإجمالي: {money(x.grossProfit)}</Text>:null}{type==="sales"?<Text style={s.hint}>العميل: {x.customerName||"بيع نقدي"} • المحصل: {money(x.paidAmount??x.amount)} • المتبقي: {money(x.dueAmount||0)}</Text><Text style={s.hint}>المشروع: {x.project||"غير محدد"}</Text>:null}{type==="expenses"?<Text style={s.hint}>التصنيف: {x.category||"غير مصنف"} • مركز التكلفة: {x.costCenter||"عام"} • المشروع: {x.project||"عام"}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
 
   const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><View><Text style={s.amount}>{x.quantity}</Text>{x.unitCost? <Text style={s.hint}>متوسط تكلفة الوحدة: {money(x.unitCost)}</Text>:null}</View><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>تقييم المخزون التقريبي</Section><Card><Text style={s.bigValue}>{money(data.stock.reduce((sum,x)=>sum+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text><Text style={s.hint}>القيمة محسوبة من الرصيد الحالي ومتوسط تكلفة الوحدة المسجل، ولا تشمل الأصناف التي لم تُسجل لها تكلفة شراء.</Text></Card><Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"||m.type==="استهلاك إنتاج"?"-":"+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف والشراء والإضافة. متوسط التكلفة والتقييم تقديريان، ويعتمدان على المشتريات المسجلة.</Text></>;
 
