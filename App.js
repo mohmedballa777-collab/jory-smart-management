@@ -11,7 +11,7 @@ const DEPARTMENTS = [
   ["الإدارة العامة","🏢"],["الإدارة المالية","💰"],["المشروعات والتشغيل","⚙️"],["المبيعات والتسويق","🛒"],
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
-const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -56,6 +56,12 @@ export default function App() {
   const [selectedRecipeId,setSelectedRecipeId] = useState("");
   const [productionLot,setProductionLot] = useState("");
   const [saleLot,setSaleLot] = useState("");
+  const [newCustomerName,setNewCustomerName] = useState("");
+  const [newCustomerPhone,setNewCustomerPhone] = useState("");
+  const [saleCustomerName,setSaleCustomerName] = useState("");
+  const [salePaid,setSalePaid] = useState("");
+  const [paymentCustomerId,setPaymentCustomerId] = useState("");
+  const [paymentAmount,setPaymentAmount] = useState("");
   const [qcProduct,setQcProduct] = useState("");
   const [qcLot,setQcLot] = useState("");
   const [qcStage,setQcStage] = useState("منتج نهائي");
@@ -91,6 +97,13 @@ export default function App() {
       Alert.alert("بيانات ناقصة","أدخل الوصف والمبلغ الصحيح الأكبر من صفر."); return;
     }
     let entry={id:Date.now().toString(),name:name.trim(),amount:v,quantity:quantity.trim(),note:note.trim(),date:stamp()};
+    if(type==="sales") {
+      const customer=saleCustomerName.trim()?(data.customers||[]).find(x=>x.name.trim().toLowerCase()===saleCustomerName.trim().toLowerCase()):null;
+      if(saleCustomerName.trim() && !customer) { Alert.alert("العميل غير مسجل","أضف العميل أولاً من صفحة العملاء أو اترك الحقل فارغاً."); return; }
+      const paid=salePaid.trim()===""?v:Number(salePaid);
+      if(!Number.isFinite(paid)||paid<0||paid>v) { Alert.alert("المبلغ المحصل غير صحيح","أدخل مبلغاً من صفر إلى قيمة الفاتورة."); return; }
+      entry={...entry,customerId:customer?.id,customerName:customer?.name||"بيع نقدي",paidAmount:paid,dueAmount:v-paid};
+    }
     let next={...data,[type]:[entry,...data[type]]};
     if(type==="sales" && quantity.trim()) {
       const q=Number(quantity);
@@ -114,8 +127,38 @@ export default function App() {
       entry={...entry,itemId:item.id,lotNumber:selectedLot?selectedLot.lotNumber:undefined,unitCost,cogs:q*unitCost,grossProfit:v-(q*unitCost)};
       next={...next,stock:data.stock.map(x=>x.id===item.id?{...x,quantity:Number(x.quantity)-q}:x),productions:selectedLot?(data.productions||[]).map(x=>x.id===selectedLot.id?{...x,remainingQuantity:Number(x.remainingQuantity??x.outputQuantity)-q}:x):(data.productions||[]),movements:[...(data.movements||[]),{id:entry.id,itemId:item.id,itemName:item.name,type:"بيع",quantity:q,lotNumber:selectedLot?selectedLot.lotNumber:undefined,date:entry.date}]};
     }
-    await persist(next); setName(""); setAmount(""); setQuantity(""); setNote(""); setSaleLot("");
+    await persist(next); setName(""); setAmount(""); setQuantity(""); setNote(""); setSaleLot(""); setSaleCustomerName(""); setSalePaid("");
     Alert.alert("تم الحفظ","تم تسجيل العملية على هذا الجهاز.");
+  };
+
+  const addCustomer = async () => {
+    const customerName=newCustomerName.trim();
+    if(!customerName) { Alert.alert("بيانات ناقصة","أدخل اسم العميل."); return; }
+    if((data.customers||[]).some(x=>x.name.trim().toLowerCase()===customerName.toLowerCase())) { Alert.alert("عميل موجود","هذا العميل مسجل بالفعل."); return; }
+    const customer={id:"customer-"+Date.now(),name:customerName,phone:newCustomerPhone.trim(),date:stamp()};
+    await persist({...data,customers:[customer,...(data.customers||[])]});
+    setNewCustomerName("");setNewCustomerPhone("");
+    Alert.alert("تم التسجيل","أُضيف العميل إلى سجل جوري.");
+  };
+
+  const collectPayment = async () => {
+    const value=Number(paymentAmount);
+    const customer=(data.customers||[]).find(x=>x.id===paymentCustomerId);
+    if(!customer || !paymentAmount.trim() || !Number.isFinite(value) || value<=0) { Alert.alert("بيانات غير مكتملة","اختر عميلاً وأدخل مبلغ تحصيل صحيحاً."); return; }
+    let remaining=value;
+    const invoices=(data.sales||[]).filter(x=>x.customerId===customer.id && Number(x.dueAmount)>0).slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+    const due=invoices.reduce((sum,x)=>sum+Number(x.dueAmount||0),0);
+    if(value>due) { Alert.alert("المبلغ أكبر من المديونية","إجمالي المديونية الحالية "+money(due)+"."); return; }
+    const updatedSales=(data.sales||[]).map(sale=>{
+      if(sale.customerId!==customer.id || remaining<=0 || Number(sale.dueAmount)<=0) return sale;
+      const applied=Math.min(remaining,Number(sale.dueAmount));
+      remaining-=applied;
+      return {...sale,paidAmount:Number(sale.paidAmount||0)+applied,dueAmount:Number(sale.dueAmount)-applied};
+    });
+    const receipt={id:"receipt-"+Date.now(),customerId:customer.id,customerName:customer.name,amount:value,date:stamp()};
+    await persist({...data,sales:updatedSales,receipts:[receipt,...(data.receipts||[])]});
+    setPaymentAmount("");
+    Alert.alert("تم التحصيل","تم توزيع المبلغ على أقدم الفواتير المستحقة.");
   };
 
   const addStock = async () => {
@@ -358,11 +401,28 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
     <Card><Text style={s.cardTitle}>مشروع TRUST للصابون</Text><Text style={s.body}>مرحلة البيع المباشر. سجّل المبيعات والمصروفات يومياً لمتابعة الأداء.</Text><Text style={s.status}>الحالة: تشغيل وبيع</Text></Card>
+  </>;
+
+  const customersScreen = <>
+    <Section>إضافة عميل جديد</Section>
+    <Card><Field label="اسم العميل" value={newCustomerName} onChange={setNewCustomerName}/><Field label="رقم الهاتف (اختياري)" value={newCustomerPhone} onChange={setNewCustomerPhone} keyboardType="phone-pad"/><Btn title="حفظ العميل" onPress={addCustomer}/></Card>
+    <Section>تسجيل تحصيل من عميل</Section>
+    <Card><Text style={s.label}>اختر العميل</Text><View style={s.roleRow}>{(data.customers||[]).map(x=><Pressable key={x.id} onPress={()=>setPaymentCustomerId(x.id)} style={[s.roleChip,paymentCustomerId===x.id&&s.roleSelected]}><Text style={paymentCustomerId===x.id?s.roleSelectedText:s.roleText}>{x.name}</Text></Pressable>)}</View><Field label="مبلغ التحصيل بالجنيه" value={paymentAmount} onChange={setPaymentAmount} keyboardType="decimal-pad"/><Btn title="تسجيل التحصيل" onPress={collectPayment}/></Card>
+    <Section>سجل العملاء والمديونيات</Section>
+    {(data.customers||[]).length===0?<Empty>لم يتم تسجيل عملاء.</Empty>:(data.customers||[]).map(customer=>{
+      const invoices=(data.sales||[]).filter(x=>x.customerId===customer.id);
+      const total=invoices.reduce((sum,x)=>sum+Number(x.amount||0),0);
+      const paid=invoices.reduce((sum,x)=>sum+Number(x.paidAmount||0),0);
+      const due=invoices.reduce((sum,x)=>sum+Number(x.dueAmount||0),0);
+      return <Card key={customer.id}><Text style={s.cardTitle}>{customer.name}</Text>{customer.phone?<Text style={s.hint}>الهاتف: {customer.phone}</Text>:null}<View style={s.metrics}><View><Text style={s.metricLabel}>إجمالي المشتريات</Text><Text style={s.metricValue}>{money(total)}</Text></View><View><Text style={s.metricLabel}>المحصل</Text><Text style={s.metricValue}>{money(paid)}</Text></View></View><Text style={[s.bigValue,{color:due>0?C.red:C.brand}]}>المديونية: {money(due)}</Text><Text style={s.hint}>عدد الفواتير: {invoices.length}</Text></Card>;
+    })}
+    <Section>آخر التحصيلات</Section>
+    {(data.receipts||[]).length===0?<Empty>لا توجد تحصيلات مسجلة.</Empty>:(data.receipts||[]).slice(0,10).map(r=><Card key={r.id}><View style={s.row}><Text style={s.amount}>{money(r.amount)}</Text><Text style={s.cardTitle}>{r.customerName}</Text></View><Text style={s.hint}>{new Date(r.date).toLocaleString("ar")}</Text></Card>)}
   </>;
 
   const reportScreen = <>
@@ -396,12 +456,13 @@ export default function App() {
   const financeScreen = (type,title,subtitle) => <><Section>{title}</Section><Text style={s.body}>{subtitle}</Text><Card>
     <Field label="الوصف" value={name} onChange={setName} placeholder={type==="sales"?"مثال: بيع صابون TRUST":"مثال: شراء عبوات"}/>
     <Field label="المبلغ بالجنيه السوداني" value={amount} onChange={setAmount} keyboardType="decimal-pad"/>
+    {type==="sales"?<><Field label="العميل المسجل (اختياري)" value={saleCustomerName} onChange={setSaleCustomerName} placeholder="اكتب اسم العميل المسجل"/><Field label="المبلغ المحصل الآن (اتركه فارغاً للسداد الكامل)" value={salePaid} onChange={setSalePaid} keyboardType="decimal-pad"/></>:null}
     <Field label="الكمية (اختياري)" value={quantity} onChange={setQuantity} keyboardType="decimal-pad"/>
     {type==="sales" && quantity.trim() && (data.productions||[]).some(x=>x.productName.trim().toLowerCase()===name.trim().toLowerCase())?<Field label="رقم تشغيلة المنتج" value={saleLot} onChange={setSaleLot} placeholder="أدخل رقم التشغيلة"/>:null}
     <Field label="ملاحظات (اختياري)" value={note} onChange={setNote}/>
     <Btn title="حفظ العملية" onPress={()=>addFinancial(type)}/>
   </Card><Section>سجل العمليات</Section>
-  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.cogs!==undefined?<Text style={s.hint}>تكلفة البضاعة: {money(x.cogs)} • الربح الإجمالي: {money(x.grossProfit)}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
+  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.cogs!==undefined?<Text style={s.hint}>تكلفة البضاعة: {money(x.cogs)} • الربح الإجمالي: {money(x.grossProfit)}</Text>:null}{type==="sales"?<Text style={s.hint}>العميل: {x.customerName||"بيع نقدي"} • المحصل: {money(x.paidAmount??x.amount)} • المتبقي: {money(x.dueAmount||0)}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
 
   const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><View><Text style={s.amount}>{x.quantity}</Text>{x.unitCost? <Text style={s.hint}>متوسط تكلفة الوحدة: {money(x.unitCost)}</Text>:null}</View><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>تقييم المخزون التقريبي</Section><Card><Text style={s.bigValue}>{money(data.stock.reduce((sum,x)=>sum+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text><Text style={s.hint}>القيمة محسوبة من الرصيد الحالي ومتوسط تكلفة الوحدة المسجل، ولا تشمل الأصناف التي لم تُسجل لها تكلفة شراء.</Text></Card><Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"||m.type==="استهلاك إنتاج"?"-":"+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف والشراء والإضافة. متوسط التكلفة والتقييم تقديريان، ويعتمدان على المشتريات المسجلة.</Text></>;
 
@@ -453,6 +514,7 @@ export default function App() {
   else if(screen==="الإنتاج") body=productionScreen;
   else if(screen==="الجودة") body=qualityScreen;
   else if(screen==="التقارير") body=reportScreen;
+  else if(screen==="العملاء") body=customersScreen;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
