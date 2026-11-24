@@ -12,6 +12,7 @@ const DEPARTMENTS = [
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
 const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], staff:[], attendance:[], payrollPayments:[], tasks:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const PERMISSION_SCREENS = ["الرئيسية","المبيعات","المصروفات","المخزون","المشتريات","الإنتاج","الجودة","الخزينة","متابعة TRUST","الموظفون والرواتب","المهام","التقارير","أداء الإدارات","العملاء","الموردون","المستخدمون","الإعدادات"];
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -39,6 +40,7 @@ export default function App() {
   const [outQty,setOutQty] = useState("");
   const [userName,setUserName] = useState("");
   const [userRole,setUserRole] = useState("موظف");
+  const [permissionUserId,setPermissionUserId] = useState("");
   const [backupText,setBackupText] = useState("");
   const [purchaseItem,setPurchaseItem] = useState("");
   const [purchaseQty,setPurchaseQty] = useState("");
@@ -482,9 +484,17 @@ export default function App() {
     setPayrollPayAmount("");Alert.alert("تم التسجيل","تم تسجيل صرف الراتب في المصروفات والخزينة.");
   };
 
+  const toggleUserPermission = async (userId,screenName) => {
+    const target=(data.users||[]).find(u=>u.id===userId);
+    if(!target || target.id==="owner") return;
+    const current=target.permissions||PERMISSION_SCREENS.filter(x=>x!=="المستخدمون"&&x!=="الإعدادات");
+    const permissions=current.includes(screenName)?current.filter(x=>x!==screenName):[...current,screenName];
+    await persist({...data,users:data.users.map(u=>u.id===userId?{...u,permissions}:u)});
+  };
+
   const addUser = async () => {
     if(!userName.trim()){Alert.alert("بيانات ناقصة","أدخل اسم المستخدم.");return;}
-    await persist({...data,users:[...data.users,{id:Date.now().toString(),name:userName.trim(),role:userRole}]});
+    await persist({...data,users:[...data.users,{id:Date.now().toString(),name:userName.trim(),role:userRole,permissions:PERMISSION_SCREENS.filter(x=>x!=="المستخدمون"&&x!=="الإعدادات")}]});
     setUserName("");
   };
 
@@ -727,8 +737,7 @@ export default function App() {
     {(data.attendance||[]).filter(x=>x.date.slice(0,7)===payrollMonth).length===0?<Empty>لا توجد سجلات حضور لهذا الشهر.</Empty>:(data.attendance||[]).filter(x=>x.date.slice(0,7)===payrollMonth).map(x=><Card key={x.id}><View style={s.row}><Text style={s.cardTitle}>{x.staffName}</Text><Text style={s.amount}>{x.status}</Text></View><Text style={s.hint}>{x.date}{x.note?" • "+x.note:""}</Text></Card>)}
   </>;
 
-  const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
-
+  const usersScreen = <><Section>إدارة المستخدمين والصلاحيات</Section><Text style={s.body}>يمكنك تحديد الشاشات المتاحة لكل مستخدم. هذه إعدادات تنظيمية محلية؛ لا تُعد مصادقة أو حماية أمنية فعلية قبل ربط خادم وتسجيل دخول موثوق.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور الوظيفي</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card><Section>تخصيص صلاحيات المستخدم</Section>{data.users.map(u=><Card key={u.id}><Pressable onPress={()=>setPermissionUserId(permissionUserId===u.id?"":u.id)}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role} • {u.id==="owner"?"حساب المالك المحمي":"اضغط لتعديل الشاشات المتاحة"}</Text></Pressable>{permissionUserId===u.id&&<>{u.id==="owner"?<Text style={s.status}>صلاحيات المالك كاملة ولا يمكن تعديلها من هذه الشاشة.</Text>:<View style={s.roleRow}>{PERMISSION_SCREENS.map(p=>{const allowed=(u.permissions||PERMISSION_SCREENS.filter(x=>x!=="المستخدمون"&&x!=="الإعدادات")).includes(p);return <Pressable key={p} onPress={()=>toggleUserPermission(u.id,p)} style={[s.roleChip,allowed&&s.roleSelected]}><Text style={allowed?s.roleSelectedText:s.roleText}>{allowed?"✓ ":""}{p}</Text></Pressable>})}</View>}</>}</Card>)}</>;
 
   const qualityScreen = <><Section>تسجيل فحص جودة</Section><Text style={s.body}>سجّل فحص المواد الخام أو أثناء التصنيع أو المنتج النهائي، مع قرار القبول أو الرفض وتوثيق العيوب.</Text><Card>
     <Field label="اسم الصنف أو المنتج" value={qcProduct} onChange={setQcProduct} placeholder="مثال: صابون TRUST 350 مل"/>
