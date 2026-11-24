@@ -17,8 +17,8 @@ const PERMISSION_SCREENS = ["الرئيسية","المبيعات","المصرو�
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
-function Field({label,value,onChange,placeholder,keyboardType="default"}) {
-  return <View style={s.field}><Text style={s.label}>{label}</Text><TextInput value={value} onChangeText={onChange} placeholder={placeholder||label} placeholderTextColor="#98A2B3" keyboardType={keyboardType} style={s.input}/></View>;
+function Field({label,value,onChange,placeholder,keyboardType="default",secureTextEntry=false,autoCapitalize="sentences",autoCorrect=true}) {
+  return <View style={s.field}><Text style={s.label}>{label}</Text><TextInput value={value} onChangeText={onChange} placeholder={placeholder||label} placeholderTextColor="#98A2B3" keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoCapitalize={autoCapitalize} autoCorrect={autoCorrect} style={s.input}/></View>;
 }
 function Btn({title,onPress,secondary=false}) {
   return <Pressable onPress={onPress} style={[s.btn,secondary&&s.btnSecondary]}><Text style={[s.btnText,secondary&&s.btnSecondaryText]}>{title}</Text></Pressable>;
