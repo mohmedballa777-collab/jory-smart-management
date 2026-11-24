@@ -438,7 +438,7 @@ export default function App() {
 
   const addTask = async () => {
     if(!taskTitle.trim()){Alert.alert("بيانات ناقصة","اكتب عنوان المهمة.");return;}
-    if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(taskDueDate)){Alert.alert("التاريخ غير صحيح","اكتب الموعد بصيغة YYYY-MM-DD.");return;}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(taskDueDate)){Alert.alert("التاريخ غير صحيح","اكتب الموعد بصيغة YYYY-MM-DD.");return;}
     const employee=(data.staff||[]).find(x=>x.id===taskAssignee);
     const task={id:"task-"+Date.now(),title:taskTitle.trim(),description:taskDescription.trim(),department:taskDepartment,assigneeId:employee?.id||"",assigneeName:employee?.name||"غير مسند",dueDate:taskDueDate,priority:taskPriority,status:"جديدة",createdAt:stamp(),updatedAt:stamp()};
     await persist({...data,tasks:[task,...(data.tasks||[])]});
