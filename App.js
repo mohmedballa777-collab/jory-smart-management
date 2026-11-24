@@ -376,6 +376,7 @@ export default function App() {
     {text:"إلغاء",style:"cancel"},
     {text:"حذف",style:"destructive",onPress:()=>{
       const record=(data[type]||[]).find(x=>x.id===id);
+      if(type==="sales" && record && record.customerId) { Alert.alert("لا يمكن حذف الفاتورة","الفاتورة مرتبطة بحساب عميل؛ صحّحها يدوياً بعد مراجعة التحصيلات حتى لا تختل المديونية."); return; }
       let next={...data,[type]:(data[type]||[]).filter(x=>x.id!==id)};
       if(type==="sales" && record && record.itemId && Number(record.quantity)>0) {
         next.stock=data.stock.map(x=>x.id===record.itemId?{...x,quantity:Number(x.quantity)+Number(record.quantity)}:x);
@@ -432,6 +433,7 @@ export default function App() {
       <Card><Text style={s.metricLabel}>المصروفات</Text><Text style={s.metricValue}>{money(totals.expenses)}</Text></Card>
     </View>
     <Card><Text style={s.metricLabel}>تكلفة البضاعة المسجلة</Text><Text style={s.metricValue}>{money(totals.cogs)}</Text><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(totals.gross)}</Text><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text></Card>
+    <Card><Text style={s.metricLabel}>إجمالي مديونيات العملاء</Text><Text style={[s.bigValue,{color:C.red}]}>{money((data.sales||[]).reduce((sum,x)=>sum+Number(x.dueAmount||0),0))}</Text><Text style={s.hint}>المبالغ المتبقية على فواتير العملاء المسجلين.</Text></Card>
     <Section>مؤشرات التشغيل</Section>
     <View style={s.metrics}>
       <Card><Text style={s.metricLabel}>أصناف المخزون</Text><Text style={s.metricValue}>{data.stock.length}</Text></Card>
