@@ -42,6 +42,12 @@ export default function App() {
   const [organizationId,setOrganizationId] = useState("");
   const [organizationName,setOrganizationName] = useState("معامل جوري للصناعات المتعددة");
   const [membershipLoading,setMembershipLoading] = useState(false);
+  const [cloudBusy,setCloudBusy] = useState(false);
+  const [cloudChecked,setCloudChecked] = useState(false);
+  const [cloudRevision,setCloudRevision] = useState(null);
+  const [cloudRemoteData,setCloudRemoteData] = useState(null);
+  const [cloudUpdatedAt,setCloudUpdatedAt] = useState("");
+  const [cloudStatus,setCloudStatus] = useState("لم يتم فحص السحابة بعد.");
   const [name,setName] = useState("");
   const [amount,setAmount] = useState("");
   const [quantity,setQuantity] = useState("");
@@ -109,6 +115,14 @@ export default function App() {
   const [qcNote,setQcNote] = useState("");
 
   const storageKey = authSession?.user?.id ? KEY + ":" + authSession.user.id : KEY;
+
+  useEffect(() => {
+    setCloudChecked(false);
+    setCloudRevision(null);
+    setCloudRemoteData(null);
+    setCloudUpdatedAt("");
+    setCloudStatus("لم يتم فحص السحابة بعد.");
+  }, [organizationId]);
 
   useEffect(() => {
     let active=true;
@@ -212,6 +226,167 @@ export default function App() {
     setData(next);
     try { await AsyncStorage.setItem(storageKey,JSON.stringify(next)); setStorageError(false); }
     catch (_) { setStorageError(true); Alert.alert("تنبيه","تعذر حفظ البيانات على الجهاز. تحقق من مساحة التخزين."); }
+  };
+
+  const refreshCloudStatus = async () => {
+    if(!supabase || !organizationId) {
+      Alert.alert("الاتصال غير جاهز","سجّل الدخول إلى مؤسسة جوري أولاً.");
+      return;
+    }
+    setCloudBusy(true);
+    setCloudStatus("جارٍ فحص النسخة السحابية...");
+    try {
+      const {data:row,error}=await supabase.from("jory_business_data")
+        .select("data,revision,updated_at")
+        .eq("organization_id",organizationId)
+        .maybeSingle();
+      if(error) throw error;
+      setCloudChecked(true);
+      if(!row) {
+        setCloudRevision(null);
+        setCloudRemoteData(null);
+        setCloudUpdatedAt("");
+        setCloudStatus("لا توجد نسخة سحابية لهذه المؤسسة. يمكنك إنشاء أول نسخة برفع البيانات المحلية.");
+      } else {
+        if(!row.data || typeof row.data!=="object" || Array.isArray(row.data)) {
+          throw new Error("تنسيق النسخة السحابية غير صالح.");
+        }
+        setCloudRevision(Number(row.revision));
+        setCloudRemoteData({...INITIAL,...row.data});
+        setCloudUpdatedAt(row.updated_at||"");
+        setCloudStatus("توجد نسخة سحابية. رقم المراجعة: "+row.revision+". لم يتم تحميلها أو دمجها.");
+      }
+    } catch(error) {
+      setCloudChecked(false);
+      setCloudStatus("تعذر فحص السحابة: "+(error.message||"خطأ غير معروف"));
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const uploadLocalData = () => {
+    if(!cloudChecked) {
+      Alert.alert("افحص السحابة أولاً","اضغط فحص السحابة قبل رفع البيانات.");
+      return;
+    }
+    Alert.alert(
+      "تأكيد رفع البيانات",
+      cloudRemoteData
+        ? "سيتم استبدال محتوى النسخة السحابية الحالية ببيانات هذا الجهاز. ستبقى النسخة المحلية محفوظة. هل تريد المتابعة؟"
+        : "سيتم إنشاء أول نسخة سحابية من بيانات هذا الجهاز. هل تريد المتابعة؟",
+      [
+        {text:"إلغاء",style:"cancel"},
+        {text:"تأكيد الرفع",onPress:async()=>{
+          setCloudBusy(true);
+          setCloudStatus("جارٍ التحقق من النسخة السحابية قبل الرفع...");
+          try {
+            const {data:latest,error:readError}=await supabase.from("jory_business_data")
+              .select("revision")
+              .eq("organization_id",organizationId)
+              .maybeSingle();
+            if(readError) throw readError;
+
+            if(latest) {
+              if(cloudRevision===null || Number(latest.revision)!==cloudRevision) {
+                setCloudChecked(false);
+                setCloudStatus("تعارض: النسخة السحابية تغيرت منذ آخر فحص. افحصها مجدداً قبل أي رفع.");
+                Alert.alert("تم إيقاف الرفع","هناك نسخة سحابية أحدث. لم يتم استبدال أي بيانات.");
+                return;
+              }
+              const {data:saved,error}=await supabase.from("jory_business_data")
+                .update({data})
+                .eq("organization_id",organizationId)
+                .eq("revision",cloudRevision)
+                .select("revision,updated_at")
+                .maybeSingle();
+              if(error) throw error;
+              if(!saved) {
+                setCloudChecked(false);
+                setCloudStatus("تعارض أثناء الرفع. افحص السحابة مجدداً.");
+                Alert.alert("تم إيقاف الرفع","تغيرت النسخة السحابية أثناء العملية. بيانات الجهاز لم تتغير.");
+                return;
+              }
+              setCloudRevision(Number(saved.revision));
+              setCloudRemoteData({...data});
+              setCloudUpdatedAt(saved.updated_at||"");
+              setCloudStatus("تم رفع بيانات هذا الجهاز بنجاح. رقم المراجعة: "+saved.revision+".");
+            } else {
+              if(cloudRevision!==null) {
+                setCloudChecked(false);
+                setCloudStatus("تعارض: النسخة السحابية التي فُحصت لم تعد موجودة. افحص السحابة مجدداً.");
+                Alert.alert("تم إيقاف الرفع","تغيرت حالة النسخة السحابية. لم يتم رفع البيانات.");
+                return;
+              }
+              const {data:saved,error}=await supabase.from("jory_business_data")
+                .insert({organization_id:organizationId,data})
+                .select("revision,updated_at")
+                .single();
+              if(error) throw error;
+              setCloudRevision(Number(saved.revision));
+              setCloudRemoteData({...data});
+              setCloudUpdatedAt(saved.updated_at||"");
+              setCloudStatus("تم إنشاء أول نسخة سحابية بنجاح. رقم المراجعة: "+saved.revision+".");
+            }
+          } catch(error) {
+            setCloudStatus("تعذر رفع البيانات: "+(error.message||"خطأ غير معروف"));
+            Alert.alert("تعذر الرفع",error.message||"حدث خطأ غير معروف.");
+          } finally {
+            setCloudBusy(false);
+          }
+        }}
+      ]
+    );
+  };
+
+  const downloadCloudData = () => {
+    if(!cloudChecked || !cloudRemoteData || cloudRevision===null) {
+      Alert.alert("لا توجد نسخة جاهزة","افحص السحابة أولاً وتأكد من وجود نسخة.");
+      return;
+    }
+    Alert.alert(
+      "تأكيد تحميل النسخة السحابية",
+      "سيتم استبدال البيانات الحالية على هذا الجهاز. سيحفظ جوري نسخة محلية احتياطية تلقائياً قبل الاستبدال.",
+      [
+        {text:"إلغاء",style:"cancel"},
+        {text:"حفظ نسخة ثم التحميل",onPress:async()=>{
+          setCloudBusy(true);
+          try {
+            const {data:latest,error:readError}=await supabase.from("jory_business_data")
+              .select("data,revision,updated_at")
+              .eq("organization_id",organizationId)
+              .maybeSingle();
+            if(readError) throw readError;
+            if(!latest || Number(latest.revision)!==cloudRevision) {
+              if(latest && latest.data && typeof latest.data==="object" && !Array.isArray(latest.data)) {
+                setCloudRevision(Number(latest.revision));
+                setCloudRemoteData({...INITIAL,...latest.data});
+                setCloudUpdatedAt(latest.updated_at||"");
+              }
+              setCloudChecked(false);
+              setCloudStatus("تغيرت النسخة السحابية. افحصها مجدداً قبل التحميل.");
+              Alert.alert("تم إيقاف التحميل","النسخة السحابية تغيرت منذ آخر فحص. لم يتم استبدال بيانات الجهاز.");
+              return;
+            }
+            const backupKey=KEY+":before-cloud-restore:"+Date.now();
+            await AsyncStorage.setItem(backupKey,JSON.stringify(data));
+            const safeRemote={...INITIAL,...latest.data};
+            await AsyncStorage.setItem(storageKey,JSON.stringify(safeRemote));
+            setData(safeRemote);
+            setStorageError(false);
+            setCloudRemoteData(safeRemote);
+            setCloudUpdatedAt(latest.updated_at||"");
+            setCloudStatus("تم تحميل النسخة السحابية. حُفظت نسخة الجهاز السابقة احتياطياً.");
+            Alert.alert("اكتمل التحميل","تم تحميل النسخة السحابية مع الاحتفاظ بنسخة احتياطية محلية من البيانات السابقة.");
+          } catch(error) {
+            setStorageError(true);
+            setCloudStatus("تعذر تحميل النسخة: "+(error.message||"خطأ غير معروف"));
+            Alert.alert("تعذر التحميل",error.message||"حدث خطأ أثناء حفظ النسخة الاحتياطية أو تحميل البيانات.");
+          } finally {
+            setCloudBusy(false);
+          }
+        }}
+      ]
+    );
   };
 
   const totals = useMemo(() => {
@@ -851,7 +1026,32 @@ export default function App() {
     <Btn title="حفظ نتيجة الفحص" onPress={addQualityCheck}/>
   </Card><Section>سجل فحوصات الجودة</Section>{(data.qualityChecks||[]).length===0?<Empty>لا توجد فحوصات مسجلة.</Empty>:(data.qualityChecks||[]).slice().reverse().map(q=><Card key={q.id}><View style={s.row}><Text style={[s.amount,{color:q.decision==="مرفوض"?C.red:q.decision==="مقبول"?C.brand:C.gold}]}>{q.decision}</Text><Text style={s.cardTitle}>{q.product}</Text></View><Text style={s.hint}>الدفعة: {q.lot} • المرحلة: {q.stage}</Text>{q.defects?<Text style={s.hint}>العيوب: {q.defects}</Text>:null}{q.note?<Text style={s.hint}>ملاحظات: {q.note}</Text>:null}<Text style={s.hint}>{new Date(q.date).toLocaleString("ar")}</Text></Card>)}</>;
 
-  const settingsScreen = <><Section>الإعدادات وحالة البيانات</Section><Card><Text style={s.cardTitle}>حفظ البيانات</Text><Text style={s.body}>الحفظ محلي على الجهاز باستخدام AsyncStorage. لا توجد مزامنة سحابية أو نسخ احتياطي تلقائي؛ يمكنك تصدير نسخة JSON واستعادتها يدوياً.</Text><Text style={[s.status,{color:storageError?C.red:C.brand}]}>{storageError?"يوجد خطأ في الحفظ":"حالة التخزين: متاح"}</Text><Btn title="تصدير نسخة احتياطية" onPress={shareBackup}/><View style={s.field}><Text style={s.label}>استعادة نسخة JSON</Text><TextInput value={backupText} onChangeText={setBackupText} multiline numberOfLines={5} placeholder="الصق محتوى النسخة الاحتياطية هنا" placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:110}]}/></View><Btn title="استعادة البيانات من النص" onPress={restoreBackup} secondary/></Card><Card><Text style={s.cardTitle}>النسخة الحالية</Text><Text style={s.body}>واجهة تشغيل أولية تشمل المبيعات والمصروفات والمخزون والمستخدمين. لا تُدخل بيانات حساسة أو تعتمد عليها كسجل محاسبي نهائي قبل إعداد النسخ الاحتياطي والصلاحيات.</Text></Card></>;
+  const settingsScreen = <>
+    <Section>الإعدادات وحالة البيانات</Section>
+    <Card>
+      <Text style={s.cardTitle}>الحفظ المحلي</Text>
+      <Text style={s.body}>كل عملية تُحفظ على هذا الجهاز أولاً. المزامنة السحابية يدوية فقط، ولا ترفع أو تستبدل البيانات تلقائياً.</Text>
+      <Text style={[s.status,{color:storageError?C.red:C.brand}]}>{storageError?"يوجد خطأ في الحفظ المحلي":"حالة التخزين المحلي: متاح"}</Text>
+      <Btn title="تصدير نسخة احتياطية" onPress={shareBackup}/>
+      <View style={s.field}><Text style={s.label}>استعادة نسخة JSON</Text><TextInput value={backupText} onChangeText={setBackupText} multiline numberOfLines={5} placeholder="الصق محتوى النسخة الاحتياطية هنا" placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:110}]}/></View>
+      <Btn title="استعادة البيانات من النص" onPress={restoreBackup} secondary/>
+    </Card>
+    <Section>المزامنة السحابية</Section>
+    <Card>
+      <Text style={s.cardTitle}>حالة الاتصال</Text>
+      <Text style={s.body}>المؤسسة: {organizationId?"مرتبطة بحسابك":"غير محددة"}</Text>
+      <Text style={s.status}>{cloudStatus}</Text>
+      {cloudUpdatedAt?<Text style={s.hint}>آخر تحديث سحابي: {new Date(cloudUpdatedAt).toLocaleString("ar")}</Text>:null}
+      <Btn title={cloudBusy?"جارٍ التنفيذ...":"1. فحص النسخة السحابية"} onPress={refreshCloudStatus}/>
+      <Btn title="2. رفع بيانات هذا الجهاز إلى السحابة" onPress={uploadLocalData}/>
+      <Btn title="3. تحميل النسخة السحابية إلى هذا الجهاز" onPress={downloadCloudData} secondary/>
+      <Text style={s.hint}>الرفع متاح وفق صلاحيات المالك أو المدير في Supabase. إذا ظهرت نسخة أحدث، يوقف جوري العملية ويطلب إعادة الفحص. التحميل يحفظ نسخة محلية احتياطية قبل الاستبدال.</Text>
+    </Card>
+    <Card>
+      <Text style={s.cardTitle}>النسخة الحالية</Text>
+      <Text style={s.body}>تظل البيانات المحلية محفوظة عند انقطاع الإنترنت. لا تستخدم بيانات تشغيل حقيقية على أجهزة متعددة قبل اختبار المزامنة بحسابات المؤسسة وصلاحياتها.</Text>
+    </Card>
+  </>;
 
   const deptScreen = <Card><Text style={s.cardTitle}>{screen}</Text><Text style={s.body}>تم إنشاء مدخل لهذا القسم ضمن الهيكل الإداري لجوري. وظائفه التفصيلية ستُبنى على مراحل، مع ربطها بقاعدة البيانات والصلاحيات.</Text></Card>;
 
