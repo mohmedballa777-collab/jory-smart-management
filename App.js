@@ -32,6 +32,7 @@ export default function App() {
   const [data,setData] = useState(INITIAL);
   const [screen,setScreen] = useState("الرئيسية");
   const [loading,setLoading] = useState(true);
+  const [loadedStorageKey,setLoadedStorageKey] = useState("");
   const [storageError,setStorageError] = useState(false);
   const [legacyLocalAvailable,setLegacyLocalAvailable] = useState(false);
   const [authReady,setAuthReady] = useState(!isSupabaseConfigured);
@@ -137,6 +138,7 @@ export default function App() {
 
   useEffect(() => {
     let active=true;
+    setLoadedStorageKey("");
     setLoading(true);
     AsyncStorage.getItem(storageKey).then(async raw => {
       if(!active) return;
@@ -154,7 +156,7 @@ export default function App() {
         setData(INITIAL);
       }
     }).catch(() => { if(active) setStorageError(true); })
-      .finally(() => { if(active) setLoading(false); });
+      .finally(() => { if(active) { setLoading(false); setLoadedStorageKey(storageKey); } });
     return () => { active=false; };
   }, [storageKey]);
 
@@ -350,7 +352,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if(!organizationId || !supabase) return;
+    if(!organizationId || !supabase || loading || loadedStorageKey!==storageKey) return;
     const networkSubscription=Network.addNetworkStateListener(state=>{
       if(state.isConnected===true && state.isInternetReachable!==false) attemptAutomaticSync();
     });
@@ -363,7 +365,7 @@ export default function App() {
       appSubscription.remove();
       if(autoSyncTimer.current) clearTimeout(autoSyncTimer.current);
     };
-  },[organizationId]);
+  },[organizationId,loading,loadedStorageKey,storageKey]);
 
   const persist = async next => {
     setData(next);
