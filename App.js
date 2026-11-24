@@ -13,7 +13,7 @@ const DEPARTMENTS = [
   ["الإدارة العامة","🏢"],["الإدارة المالية","💰"],["المشروعات والتشغيل","⚙️"],["المبيعات والتسويق","🛒"],
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
-const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], staff:[], attendance:[], payrollPayments:[], tasks:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], staff:[], attendance:[], payrollPayments:[], tasks:[], users:[{id:"owner",name:"محمد مصطفى بله",role:"مدير عام"}], project:"TRUST - الصابون" };
 const PERMISSION_SCREENS = ["الرئيسية","المبيعات","المصروفات","المخزون","المشتريات","الإنتاج","الجودة","الخزينة","متابعة TRUST","الموظفون والرواتب","المهام","التقارير","أداء الإدارات","العملاء","الموردون","المستخدمون","الإعدادات"];
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
