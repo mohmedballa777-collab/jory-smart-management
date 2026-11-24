@@ -11,7 +11,7 @@ const DEPARTMENTS = [
   ["الإدارة العامة","🏢"],["الإدارة المالية","💰"],["المشروعات والتشغيل","⚙️"],["المبيعات والتسويق","🛒"],
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
-const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], movements:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], movements:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -44,6 +44,11 @@ export default function App() {
   const [purchaseQty,setPurchaseQty] = useState("");
   const [purchaseCost,setPurchaseCost] = useState("");
   const [supplier,setSupplier] = useState("");
+  const [productionProduct,setProductionProduct] = useState("");
+  const [productionOutput,setProductionOutput] = useState("");
+  const [productionMaterials,setProductionMaterials] = useState("");
+  const [productionExtraCost,setProductionExtraCost] = useState("");
+  const [productionNote,setProductionNote] = useState("");
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then(raw => {
@@ -140,6 +145,47 @@ export default function App() {
     Alert.alert("تم الصرف","تم خصم الكمية من رصيد المخزون.");
   };
 
+  const addProduction = async () => {
+    const output=Number(productionOutput), extra=productionExtraCost.trim()?Number(productionExtraCost):0;
+    if(!productionProduct.trim() || !productionOutput.trim() || !Number.isFinite(output) || output<=0 || !productionMaterials.trim() || !Number.isFinite(extra) || extra<0) {
+      Alert.alert("بيانات ناقصة","أدخل اسم المنتج النهائي والكمية والمواد الخام المستخدمة."); return;
+    }
+    const lines=productionMaterials.split("\n").map(x=>x.trim()).filter(Boolean);
+    const requirements=[];
+    for(const line of lines) {
+      const parts=line.split(/[|,،]/).map(x=>x.trim());
+      if(parts.length<2 || !parts[0] || !parts[1]) { Alert.alert("صيغة المواد غير صحيحة","اكتب كل مادة في سطر بالشكل: اسم المادة | الكمية"); return; }
+      const qty=Number(parts[1]);
+      if(!Number.isFinite(qty) || qty<=0) { Alert.alert("كمية غير صحيحة","راجع كميات المواد الخام."); return; }
+      const item=data.stock.find(x=>x.name.trim().toLowerCase()===parts[0].toLowerCase());
+      if(!item) { Alert.alert("مادة غير موجودة","المادة "+parts[0]+" غير موجودة في المخزون."); return; }
+      if(Number(item.quantity)<qty) { Alert.alert("رصيد غير كافٍ","المتاح من "+item.name+" هو "+item.quantity+" والمطلوب "+qty+"."); return; }
+      if(!(Number(item.unitCost)>0)) { Alert.alert("تكلفة غير مسجلة","سجّل شراء المادة "+item.name+" أولاً حتى تُحسب تكلفة الإنتاج."); return; }
+      requirements.push({itemId:item.id,itemName:item.name,quantity:qty,unitCost:Number(item.unitCost),cost:qty*Number(item.unitCost)});
+    }
+    const materialCost=requirements.reduce((sum,x)=>sum+x.cost,0);
+    const totalCost=materialCost+extra;
+    const unitCost=totalCost/output;
+    const existing=data.stock.find(x=>x.name.trim().toLowerCase()===productionProduct.trim().toLowerCase());
+    const oldQty=existing?Number(existing.quantity)||0:0;
+    const oldUnitCost=existing?Number(existing.unitCost)||0:0;
+    const newUnitCost=oldQty>0 && oldUnitCost>0 ? ((oldQty*oldUnitCost)+totalCost)/(oldQty+output) : unitCost;
+    const productId=existing?existing.id:Date.now().toString();
+    let stock=data.stock.map(x=>{
+      const consumed=requirements.find(r=>r.itemId===x.id);
+      if(consumed) return {...x,quantity:Number(x.quantity)-consumed.quantity};
+      if(x.id===productId) return {...x,quantity:oldQty+output,unitCost:newUnitCost};
+      return x;
+    });
+    if(!existing) stock=[{id:productId,name:productionProduct.trim(),quantity:output,unitCost},...stock];
+    const date=stamp(), id="prod-"+Date.now().toString();
+    const production={id,productId,productName:productionProduct.trim(),outputQuantity:output,materials:requirements,materialCost,extraCost:extra,totalCost,unitCost,note:productionNote.trim(),date};
+    const movements=[...(data.movements||[]),...requirements.map((x,i)=>({id:id+"-raw-"+i,itemId:x.itemId,itemName:x.itemName,type:"استهلاك إنتاج",quantity:x.quantity,date})),{id:id+"-out",itemId:productId,itemName:productionProduct.trim(),type:"إنتاج",quantity:output,date}];
+    await persist({...data,stock,productions:[...(data.productions||[]),production],movements});
+    setProductionProduct("");setProductionOutput("");setProductionMaterials("");setProductionExtraCost("");setProductionNote("");
+    Alert.alert("تم تسجيل الإنتاج","تم خصم المواد الخام وإضافة المنتج النهائي إلى المخزون.");
+  };
+
   const shareBackup = async () => {
     try {
       await Share.share({message:JSON.stringify({exportedAt:stamp(),app:"Jouri",data},null,2),title:"نسخة احتياطية - جوري"});
@@ -214,7 +260,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["المستخدمون","المستخدمون","👥"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
@@ -232,6 +278,15 @@ export default function App() {
 
   const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><View><Text style={s.amount}>{x.quantity}</Text>{x.unitCost? <Text style={s.hint}>متوسط تكلفة الوحدة: {money(x.unitCost)}</Text>:null}</View><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>تقييم المخزون التقريبي</Section><Card><Text style={s.bigValue}>{money(data.stock.reduce((sum,x)=>sum+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text><Text style={s.hint}>القيمة محسوبة من الرصيد الحالي ومتوسط تكلفة الوحدة المسجل، ولا تشمل الأصناف التي لم تُسجل لها تكلفة شراء.</Text></Card><Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"?"-": "+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف والشراء والإضافة. متوسط التكلفة والتقييم تقديريان، ويعتمدان على المشتريات المسجلة.</Text></>;
 
+  const productionScreen = <><Section>تسجيل دفعة إنتاج</Section><Text style={s.body}>أدخل المنتج النهائي والمواد الخام. يجب أن تكون المواد الخام مسجلة في المخزون ولها تكلفة شراء.</Text><Card>
+    <Field label="اسم المنتج النهائي" value={productionProduct} onChange={setProductionProduct} placeholder="مثال: صابون TRUST 350 مل"/>
+    <Field label="الكمية المنتجة" value={productionOutput} onChange={setProductionOutput} keyboardType="decimal-pad"/>
+    <View style={s.field}><Text style={s.label}>المواد الخام المستهلكة (مادة في كل سطر)</Text><TextInput value={productionMaterials} onChangeText={setProductionMaterials} multiline numberOfLines={5} placeholder={"مثال:\nصابون خام | 20\nعبوات 350 مل | 50"} placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:120}]}/><Text style={s.hint}>الصيغة: اسم المادة | الكمية. استخدم سطراً مستقلاً لكل مادة.</Text></View>
+    <Field label="تكاليف إضافية للدفعة (اختياري)" value={productionExtraCost} onChange={setProductionExtraCost} keyboardType="decimal-pad"/>
+    <Field label="ملاحظات (اختياري)" value={productionNote} onChange={setProductionNote}/>
+    <Btn title="حفظ دفعة الإنتاج" onPress={addProduction}/>
+  </Card><Section>سجل دفعات الإنتاج</Section>{(data.productions||[]).length===0?<Empty/>:(data.productions||[]).slice().reverse().map(p=><Card key={p.id}><Text style={s.cardTitle}>{p.productName}</Text><Text style={s.hint}>الإنتاج: {p.outputQuantity} • تكلفة الدفعة: {money(p.totalCost)}</Text><Text style={s.hint}>تكلفة الوحدة المنتجة: {money(p.unitCost)}</Text><Text style={s.hint}>المواد: {(p.materials||[]).map(m=>m.itemName+" ("+m.quantity+")").join("، ")}</Text>{p.note?<Text style={s.hint}>{p.note}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>;
+
   const purchasesScreen = <><Section>تسجيل مشتريات جديدة</Section><Text style={s.body}>أدخل التكلفة الإجمالية للكمية المشتراة. سيُحدّث التطبيق متوسط تكلفة الوحدة المرجّح للصنف.</Text><Card><Field label="اسم الصنف" value={purchaseItem} onChange={setPurchaseItem}/><Field label="الكمية المشتراة" value={purchaseQty} onChange={setPurchaseQty} keyboardType="decimal-pad"/><Field label="إجمالي تكلفة الشراء (ج.س)" value={purchaseCost} onChange={setPurchaseCost} keyboardType="decimal-pad"/><Field label="المورد (اختياري)" value={supplier} onChange={setSupplier}/><Btn title="حفظ المشتريات وتحديث المخزون" onPress={addPurchase}/></Card><Section>سجل المشتريات</Section>{(data.purchases||[]).length===0?<Empty/>:(data.purchases||[]).slice().reverse().map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.totalCost)}</Text><Text style={s.cardTitle}>{p.itemName}</Text></View><Text style={s.hint}>الكمية: {p.quantity} • تكلفة الوحدة: {money(p.unitCost)}</Text>{p.supplier?<Text style={s.hint}>المورد: {p.supplier}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>; 
 
   const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
@@ -247,6 +302,7 @@ export default function App() {
   else if(screen==="المصروفات") body=financeScreen("expenses","تسجيل المصروفات","سجّل مصروفات التشغيل والمشتريات.");
   else if(screen==="المخزون") body=stockScreen;
   else if(screen==="المشتريات") body=purchasesScreen;
+  else if(screen==="الإنتاج") body=productionScreen;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
