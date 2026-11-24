@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "جوري - الإدارة الذكية",
+    "slug": "jouri-smart-management",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.jourilabs.smartmanagement",
+      "versionCode": 1
+    },
+    "extra": {
+      "appPurpose": "إدارة معامل جوري للصناعات المتعددة"
+    }
+  }
+}
