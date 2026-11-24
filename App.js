@@ -853,8 +853,8 @@ export default function App() {
     <Card><Section>{authSession ? "إنشاء مؤسسة جوري" : "تسجيل الدخول إلى جوري"}</Section>
       <Text style={s.body}>اتصال الحساب السحابي مفعّل. بيانات التشغيل المحلية لا تُنقل إلى السحابة تلقائياً.</Text>
       {!authSession ? <>
-        <Field label="البريد الإلكتروني" value={authEmail} onChange={setAuthEmail}/>
-        <Field label="كلمة المرور (6 أحرف على الأقل)" value={authPassword} onChange={setAuthPassword}/>
+        <Field label="البريد الإلكتروني" value={authEmail} onChange={setAuthEmail} keyboardType="email-address" autoCapitalize="none"/>
+        <Field label="كلمة المرور (6 أحرف على الأقل)" value={authPassword} onChange={setAuthPassword} secureTextEntry autoCapitalize="none"/>
         <Btn title={authBusy ? "جارٍ التنفيذ..." : authMode==="signin" ? "تسجيل الدخول" : "إنشاء حساب"} onPress={submitAuth}/>
         <Btn title={authMode==="signin" ? "ليس لديك حساب؟ أنشئ حساباً" : "لديك حساب؟ سجّل الدخول"} onPress={()=>{setAuthMode(authMode==="signin"?"signup":"signin");setAuthMessage("");}} secondary/>
       </> : <>
