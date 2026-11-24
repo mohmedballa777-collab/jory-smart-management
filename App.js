@@ -11,7 +11,7 @@ const DEPARTMENTS = [
   ["الإدارة العامة","🏢"],["الإدارة المالية","💰"],["المشروعات والتشغيل","⚙️"],["المبيعات والتسويق","🛒"],
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
-const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], movements:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -54,6 +54,12 @@ export default function App() {
   const [recipeOutput,setRecipeOutput] = useState("");
   const [recipeMaterials,setRecipeMaterials] = useState("");
   const [selectedRecipeId,setSelectedRecipeId] = useState("");
+  const [qcProduct,setQcProduct] = useState("");
+  const [qcLot,setQcLot] = useState("");
+  const [qcStage,setQcStage] = useState("منتج نهائي");
+  const [qcDecision,setQcDecision] = useState("مقبول");
+  const [qcDefects,setQcDefects] = useState("");
+  const [qcNote,setQcNote] = useState("");
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then(raw => {
@@ -231,6 +237,17 @@ export default function App() {
     Alert.alert("تم حفظ الوصفة","أصبحت الوصفة متاحة للاستخدام في دفعات الإنتاج.");
   };
 
+
+  const addQualityCheck = async () => {
+    if(!qcProduct.trim() || !qcLot.trim()) {
+      Alert.alert("بيانات ناقصة","أدخل اسم الصنف أو المنتج ورقم الدفعة."); return;
+    }
+    const record={id:"qc-"+Date.now(),product:qcProduct.trim(),lot:qcLot.trim(),stage:qcStage,decision:qcDecision,defects:qcDefects.trim(),note:qcNote.trim(),date:stamp()};
+    await persist({...data,qualityChecks:[...(data.qualityChecks||[]),record]});
+    setQcProduct("");setQcLot("");setQcDefects("");setQcNote("");setQcDecision("مقبول");
+    Alert.alert("تم حفظ الفحص","تم تسجيل نتيجة فحص الجودة.");
+  };
+
   const shareBackup = async () => {
     try {
       await Share.share({message:JSON.stringify({exportedAt:stamp(),app:"Jouri",data},null,2),title:"نسخة احتياطية - جوري"});
@@ -318,7 +335,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
@@ -358,6 +375,17 @@ export default function App() {
 
   const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
 
+
+  const qualityScreen = <><Section>تسجيل فحص جودة</Section><Text style={s.body}>سجّل فحص المواد الخام أو أثناء التصنيع أو المنتج النهائي، مع قرار القبول أو الرفض وتوثيق العيوب.</Text><Card>
+    <Field label="اسم الصنف أو المنتج" value={qcProduct} onChange={setQcProduct} placeholder="مثال: صابون TRUST 350 مل"/>
+    <Field label="رقم الدفعة / التشغيلة" value={qcLot} onChange={setQcLot} placeholder="مثال: TRUST-2026-001"/>
+    <Text style={s.label}>مرحلة الفحص</Text><View style={s.roleRow}>{["استلام مواد خام","أثناء التصنيع","منتج نهائي"].map(v=><Pressable key={v} onPress={()=>setQcStage(v)} style={[s.roleChip,qcStage===v&&s.roleSelected]}><Text style={qcStage===v?s.roleSelectedText:s.roleText}>{v}</Text></Pressable>)}</View>
+    <Text style={s.label}>قرار الفحص</Text><View style={s.roleRow}>{["مقبول","مقبول بتحفظ","مرفوض"].map(v=><Pressable key={v} onPress={()=>setQcDecision(v)} style={[s.roleChip,qcDecision===v&&s.roleSelected]}><Text style={qcDecision===v?s.roleSelectedText:s.roleText}>{v}</Text></Pressable>)}</View>
+    <Field label="العيوب أو الملاحظات الفنية" value={qcDefects} onChange={setQcDefects} placeholder="مثال: اختلاف اللون أو التسريب"/>
+    <Field label="ملاحظات إضافية" value={qcNote} onChange={setQcNote}/>
+    <Btn title="حفظ نتيجة الفحص" onPress={addQualityCheck}/>
+  </Card><Section>سجل فحوصات الجودة</Section>{(data.qualityChecks||[]).length===0?<Empty>لا توجد فحوصات مسجلة.</Empty>:(data.qualityChecks||[]).slice().reverse().map(q=><Card key={q.id}><View style={s.row}><Text style={[s.amount,{color:q.decision==="مرفوض"?C.red:q.decision==="مقبول"?C.brand:C.gold}]}>{q.decision}</Text><Text style={s.cardTitle}>{q.product}</Text></View><Text style={s.hint}>الدفعة: {q.lot} • المرحلة: {q.stage}</Text>{q.defects?<Text style={s.hint}>العيوب: {q.defects}</Text>:null}{q.note?<Text style={s.hint}>ملاحظات: {q.note}</Text>:null}<Text style={s.hint}>{new Date(q.date).toLocaleString("ar")}</Text></Card>)}</>;
+
   const settingsScreen = <><Section>الإعدادات وحالة البيانات</Section><Card><Text style={s.cardTitle}>حفظ البيانات</Text><Text style={s.body}>الحفظ محلي على الجهاز باستخدام AsyncStorage. لا توجد مزامنة سحابية أو نسخ احتياطي تلقائي؛ يمكنك تصدير نسخة JSON واستعادتها يدوياً.</Text><Text style={[s.status,{color:storageError?C.red:C.brand}]}>{storageError?"يوجد خطأ في الحفظ":"حالة التخزين: متاح"}</Text><Btn title="تصدير نسخة احتياطية" onPress={shareBackup}/><View style={s.field}><Text style={s.label}>استعادة نسخة JSON</Text><TextInput value={backupText} onChangeText={setBackupText} multiline numberOfLines={5} placeholder="الصق محتوى النسخة الاحتياطية هنا" placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:110}]}/></View><Btn title="استعادة البيانات من النص" onPress={restoreBackup} secondary/></Card><Card><Text style={s.cardTitle}>النسخة الحالية</Text><Text style={s.body}>واجهة تشغيل أولية تشمل المبيعات والمصروفات والمخزون والمستخدمين. لا تُدخل بيانات حساسة أو تعتمد عليها كسجل محاسبي نهائي قبل إعداد النسخ الاحتياطي والصلاحيات.</Text></Card></>;
 
   const deptScreen = <Card><Text style={s.cardTitle}>{screen}</Text><Text style={s.body}>تم إنشاء مدخل لهذا القسم ضمن الهيكل الإداري لجوري. وظائفه التفصيلية ستُبنى على مراحل، مع ربطها بقاعدة البيانات والصلاحيات.</Text></Card>;
@@ -370,6 +398,7 @@ export default function App() {
   else if(screen==="المخزون") body=stockScreen;
   else if(screen==="المشتريات") body=purchasesScreen;
   else if(screen==="الإنتاج") body=productionScreen;
+  else if(screen==="الجودة") body=qualityScreen;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
