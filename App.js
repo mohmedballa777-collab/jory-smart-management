@@ -147,7 +147,12 @@ export default function App() {
       if(raw) {
         const parsed=JSON.parse(raw);
         if(!parsed || typeof parsed!=="object" || Array.isArray(parsed)) throw new Error("Invalid local data");
-        setData({...INITIAL,...parsed});
+        const loadedData={...INITIAL,...parsed};
+        loadedData.users=(Array.isArray(loadedData.users)?loadedData.users:INITIAL.users).map(user=>
+          user?.id==="owner"?{...user,name:"محمد مصطفى بله",role:"مدير عام"}:user
+        );
+        if(!loadedData.users.some(user=>user?.id==="owner")) loadedData.users=[{...INITIAL.users[0]},...loadedData.users];
+        setData(loadedData);
         setLegacyLocalAvailable(false);
       } else if(storageKey!==KEY) {
         const legacyRaw=await AsyncStorage.getItem(KEY);
