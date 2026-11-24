@@ -51,6 +51,7 @@ export default function App() {
   const [expenseCenter,setExpenseCenter] = useState("عام");
   const [expenseProject,setExpenseProject] = useState("TRUST - الصابون");
   const [openingCashInput,setOpeningCashInput] = useState("");
+  const [trustReportDay,setTrustReportDay] = useState(new Date().toISOString().slice(0,10));
   const [productionProduct,setProductionProduct] = useState("");
   const [productionOutput,setProductionOutput] = useState("");
   const [productionMaterials,setProductionMaterials] = useState("");
@@ -383,6 +384,18 @@ export default function App() {
     ]);
   };
 
+  const trustDaySummary = useMemo(() => {
+    const sameDay=x=>String(x.date||"").slice(0,10)===trustReportDay;
+    const sales=(data.sales||[]).filter(sameDay);
+    const expenses=(data.expenses||[]).filter(x=>sameDay(x) && (x.project||"عام")==="TRUST - الصابون");
+    const production=(data.productions||[]).filter(sameDay);
+    const revenue=sales.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const cogs=sales.reduce((sum,x)=>sum+Number(x.cogs||0),0);
+    const expenseTotal=expenses.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const collected=sales.reduce((sum,x)=>sum+Number(x.paidAmount??x.amount??0),0);
+    return {sales,expenses,production,revenue,cogs,expenseTotal,collected,gross:revenue-cogs,net:revenue-cogs-expenseTotal};
+  },[data,trustReportDay]);
+
   const dailyReport = useMemo(() => {
     const today=new Date().toDateString();
     const sales=data.sales.filter(x=>new Date(x.date).toDateString()===today);
@@ -443,7 +456,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"],["الخزينة","الخزينة","💰"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"],["الخزينة","الخزينة","💰"],["متابعة TRUST","متابعة TRUST","🧼"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
@@ -490,6 +503,21 @@ export default function App() {
     <View style={s.metrics}><Card><Text style={s.metricLabel}>إجمالي المقبوضات</Text><Text style={s.metricValue}>{money((data.cashMovements||[]).filter(x=>x.direction==="in").reduce((sum,x)=>sum+Number(x.amount||0),0))}</Text></Card><Card><Text style={s.metricLabel}>إجمالي المدفوعات</Text><Text style={s.metricValue}>{money((data.cashMovements||[]).filter(x=>x.direction==="out").reduce((sum,x)=>sum+Number(x.amount||0),0))}</Text></Card></View>
     <Section>سجل حركة الخزينة</Section>
     {(data.cashMovements||[]).length===0?<Empty>لا توجد حركات نقدية مسجلة بعد.</Empty>:(data.cashMovements||[]).map(x=><Card key={x.id}><View style={s.row}><Text style={[s.amount,{color:x.direction==="in"?C.brand:C.red}]}>{x.direction==="in"?"+":"-"}{money(x.amount)}</Text><Text style={s.cardTitle}>{x.type}</Text></View><Text style={s.hint}>{x.description}</Text><Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text></Card>)}
+  </>;
+
+  const trustDashboard = <>
+    <Section>لوحة متابعة TRUST اليومية</Section>
+    <Card><Text style={s.label}>تاريخ التقرير</Text><Field label="التاريخ بصيغة YYYY-MM-DD" value={trustReportDay} onChange={setTrustReportDay} placeholder="2026-11-24"/></Card>
+    <View style={s.metrics}><Card><Text style={s.metricLabel}>إجمالي المبيعات</Text><Text style={s.metricValue}>{money(trustDaySummary.revenue)}</Text><Text style={s.hint}>عدد الفواتير: {trustDaySummary.sales.length}</Text></Card><Card><Text style={s.metricLabel}>المبالغ المحصلة</Text><Text style={s.metricValue}>{money(trustDaySummary.collected)}</Text></Card></View>
+    <View style={s.metrics}><Card><Text style={s.metricLabel}>تكلفة البضاعة</Text><Text style={s.metricValue}>{money(trustDaySummary.cogs)}</Text></Card><Card><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(trustDaySummary.gross)}</Text></Card></View>
+    <View style={s.metrics}><Card><Text style={s.metricLabel}>مصروفات TRUST</Text><Text style={s.metricValue}>{money(trustDaySummary.expenseTotal)}</Text><Text style={s.hint}>عدد العمليات: {trustDaySummary.expenses.length}</Text></Card><Card><Text style={s.metricLabel}>صافي اليوم التقديري</Text><Text style={[s.bigValue,{color:trustDaySummary.net>=0?C.brand:C.red}]}>{money(trustDaySummary.net)}</Text></Card></View>
+    <Card><Text style={s.metricLabel}>دفعات الإنتاج</Text><Text style={s.bigValue}>{trustDaySummary.production.length}</Text><Text style={s.hint}>إجمالي الكمية المنتجة: {trustDaySummary.production.reduce((sum,x)=>sum+Number(x.outputQuantity||0),0)}</Text></Card>
+    <Section>مبيعات اليوم</Section>
+    {trustDaySummary.sales.length===0?<Empty>لا توجد مبيعات في هذا التاريخ.</Empty>:trustDaySummary.sales.map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View><Text style={s.hint}>الكمية: {x.quantity||"غير مسجلة"} • المحصل: {money(x.paidAmount??x.amount)} • المتبقي: {money(x.dueAmount||0)}</Text></Card>)}
+    <Section>مصروفات TRUST</Section>
+    {trustDaySummary.expenses.length===0?<Empty>لا توجد مصروفات مسجلة لمشروع TRUST في هذا التاريخ.</Empty>:trustDaySummary.expenses.map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View><Text style={s.hint}>{x.category||"غير مصنف"} • {x.costCenter||"عام"}</Text></Card>)}
+    <Section>الإنتاج في التاريخ المحدد</Section>
+    {trustDaySummary.production.length===0?<Empty>لا توجد دفعات إنتاج مسجلة.</Empty>:trustDaySummary.production.map(x=><Card key={x.id}><Text style={s.cardTitle}>{x.productName}</Text><Text style={s.hint}>الكمية المنتجة: {x.outputQuantity} • رقم التشغيلة: {x.lotNumber||"غير محدد"}</Text></Card>)}
   </>;
 
   const reportScreen = <>
@@ -601,6 +629,7 @@ export default function App() {
   else if(screen==="الإنتاج") body=productionScreen;
   else if(screen==="الجودة") body=qualityScreen;
   else if(screen==="الخزينة") body=cashScreen;
+  else if(screen==="متابعة TRUST") body=trustDashboard;
   else if(screen==="التقارير") body=reportScreen;
   else if(screen==="العملاء") body=customersScreen;
   else if(screen==="الموردون") body=suppliersScreen;
