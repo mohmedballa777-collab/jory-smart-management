@@ -156,6 +156,7 @@ export default function App() {
       Alert.alert("بيانات ناقصة","أدخل اسم المنتج النهائي والكمية والمواد الخام المستخدمة."); return;
     }
     const selectedRecipe=(data.recipes||[]).find(x=>x.id===selectedRecipeId);
+    if(selectedRecipeId && !selectedRecipe) { Alert.alert("الوصفة غير متاحة","اختر وصفة محفوظة أو أدخل المواد الخام يدوياً."); return; }
     const lines=selectedRecipe
       ? selectedRecipe.materials.map(x=>x.itemName+" | "+(Number(x.quantity)*output/Number(selectedRecipe.baseOutput)))
       : productionMaterials.split("\n").map(x=>x.trim()).filter(Boolean);
