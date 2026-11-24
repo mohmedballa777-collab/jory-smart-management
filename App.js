@@ -63,7 +63,8 @@ export default function App() {
   const totals = useMemo(() => {
     const sales=data.sales.reduce((a,x)=>a+Number(x.amount||0),0);
     const expenses=data.expenses.reduce((a,x)=>a+Number(x.amount||0),0);
-    return {sales,expenses,net:sales-expenses};
+    const cogs=data.sales.reduce((a,x)=>a+Number(x.cogs||0),0);
+    return {sales,expenses,cogs,gross:sales-cogs,net:sales-cogs-expenses};
   },[data]);
 
   const addFinancial = async type => {
@@ -71,8 +72,18 @@ export default function App() {
     if(!name.trim() || !amount.trim() || !Number.isFinite(v) || v<=0) {
       Alert.alert("بيانات ناقصة","أدخل الوصف والمبلغ الصحيح الأكبر من صفر."); return;
     }
-    const entry={id:Date.now().toString(),name:name.trim(),amount:v,quantity:quantity.trim(),note:note.trim(),date:stamp()};
-    const next={...data,[type]:[entry,...data[type]]};
+    let entry={id:Date.now().toString(),name:name.trim(),amount:v,quantity:quantity.trim(),note:note.trim(),date:stamp()};
+    let next={...data,[type]:[entry,...data[type]]};
+    if(type==="sales" && quantity.trim()) {
+      const q=Number(quantity);
+      if(!Number.isFinite(q) || q<=0) { Alert.alert("كمية غير صحيحة","أدخل كمية بيع أكبر من صفر."); return; }
+      const item=data.stock.find(x=>x.name.trim().toLowerCase()===name.trim().toLowerCase());
+      if(!item) { Alert.alert("الصنف غير موجود","أضف الصنف إلى المخزون أولاً، واستخدم اسم الصنف نفسه عند تسجيل البيع."); return; }
+      if(q>Number(item.quantity)) { Alert.alert("رصيد غير كافٍ", "المتاح من "+item.name+" هو "+item.quantity+" فقط."); return; }
+      const unitCost=Number(item.unitCost)||0;
+      entry={...entry,itemId:item.id,unitCost,cogs:q*unitCost,grossProfit:v-(q*unitCost)};
+      next={...next,stock:data.stock.map(x=>x.id===item.id?{...x,quantity:Number(x.quantity)-q}:x),movements:[...(data.movements||[]),{id:entry.id,itemId:item.id,itemName:item.name,type:"بيع",quantity:q,date:entry.date}]};
+    }
     await persist(next); setName(""); setAmount(""); setQuantity(""); setNote("");
     Alert.alert("تم الحفظ","تم تسجيل العملية على هذا الجهاز.");
   };
@@ -190,7 +201,9 @@ export default function App() {
       <Card><Text style={s.metricLabel}>إجمالي المبيعات</Text><Text style={s.metricValue}>{money(totals.sales)}</Text></Card>
       <Card><Text style={s.metricLabel}>المصروفات</Text><Text style={s.metricValue}>{money(totals.expenses)}</Text></Card>
     </View>
-    <Card><Text style={s.metricLabel}>صافي الفرق (مبيعات - مصروفات)</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>ليس ربحاً محاسبياً نهائياً؛ لا يشمل تكلفة المخزون أو الالتزامات غير المسجلة.</Text></Card>
+    <Card><Text style={s.metricLabel}>تكلفة البضاعة المباعة المسجلة</Text><Text style={s.metricValue}>{money(totals.cogs)}</Text><Text style={s.hint}>تُحسب عند بيع صنف مخزني له تكلفة شراء مسجلة.</Text></Card>
+    <Card><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(totals.gross)}</Text><Text style={s.hint}>المبيعات ناقص تكلفة البضاعة المباعة المسجلة.</Text></Card>
+    <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
       {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["المستخدمون","المستخدمون","👥"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
@@ -207,7 +220,7 @@ export default function App() {
     <Field label="ملاحظات (اختياري)" value={note} onChange={setNote}/>
     <Btn title="حفظ العملية" onPress={()=>addFinancial(type)}/>
   </Card><Section>سجل العمليات</Section>
-  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
+  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.cogs!==undefined?<Text style={s.hint}>تكلفة البضاعة: {money(x.cogs)} • الربح الإجمالي: {money(x.grossProfit)}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
 
   const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><View><Text style={s.amount}>{x.quantity}</Text>{x.unitCost? <Text style={s.hint}>متوسط تكلفة الوحدة: {money(x.unitCost)}</Text>:null}</View><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>تقييم المخزون التقريبي</Section><Card><Text style={s.bigValue}>{money(data.stock.reduce((sum,x)=>sum+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text><Text style={s.hint}>القيمة محسوبة من الرصيد الحالي ومتوسط تكلفة الوحدة المسجل، ولا تشمل الأصناف التي لم تُسجل لها تكلفة شراء.</Text></Card><Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"?"-": "+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف والشراء والإضافة. متوسط التكلفة والتقييم تقديريان، ويعتمدان على المشتريات المسجلة.</Text></>;
 
