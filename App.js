@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   SafeAreaView, ScrollView, View, Text, TextInput, StyleSheet,
-  Pressable, Alert, StatusBar, ActivityIndicator, Share
+  Pressable, Alert, StatusBar, ActivityIndicator, Share, AppState
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Network from "expo-network";
 import { supabase, isSupabaseConfigured } from "./src/lib/supabase";
 
 const KEY = "jouri-business-data-v1";
@@ -116,6 +117,15 @@ export default function App() {
   const [qcNote,setQcNote] = useState("");
 
   const storageKey = authSession?.user?.id ? KEY + ":" + authSession.user.id : KEY;
+  const syncMetaKey = organizationId ? KEY + ":cloud-sync-meta:" + organizationId : "";
+  const pendingSyncKey = organizationId ? KEY + ":cloud-sync-pending:" + organizationId : "";
+  const dataRef = useRef(data);
+  const autoSyncLock = useRef(false);
+  const autoSyncTimer = useRef(null);
+
+  useEffect(() => {
+    dataRef.current=data;
+  }, [data]);
 
   useEffect(() => {
     setCloudChecked(false);
@@ -266,10 +276,112 @@ export default function App() {
     );
   };
 
+  const attemptAutomaticSync = async () => {
+    if(!supabase || !organizationId || !syncMetaKey || autoSyncLock.current) return;
+    let pendingMarker=null;
+    try {
+      pendingMarker=await AsyncStorage.getItem(pendingSyncKey);
+      if(!pendingMarker) return;
+      const metaRaw=await AsyncStorage.getItem(syncMetaKey);
+      if(!metaRaw) {
+        setCloudStatus("توجد تعديلات محلية. نفّذ أول رفع أو تحميل يدوي لتأسيس المزامنة التلقائية.");
+        return;
+      }
+      const meta=JSON.parse(metaRaw);
+      if(!Number.isFinite(Number(meta.revision))) {
+        setCloudStatus("بيانات تأسيس المزامنة غير صالحة. أعد فحص السحابة.");
+        return;
+      }
+      const network=await Network.getNetworkStateAsync();
+      if(network.isConnected!==true || network.isInternetReachable===false) return;
+
+      autoSyncLock.current=true;
+      const {data:latest,error:readError}=await supabase.from("jory_business_data")
+        .select("revision")
+        .eq("organization_id",organizationId)
+        .maybeSingle();
+      if(readError) throw readError;
+      if(!latest || Number(latest.revision)!==Number(meta.revision)) {
+        setCloudChecked(false);
+        setCloudStatus("تعارض في المزامنة التلقائية: النسخة السحابية تغيرت على جهاز آخر. لم يتم استبدال أي بيانات؛ راجع النسختين يدوياً.");
+        return;
+      }
+
+      const snapshot=dataRef.current;
+      const {data:saved,error:updateError}=await supabase.from("jory_business_data")
+        .update({data:snapshot})
+        .eq("organization_id",organizationId)
+        .eq("revision",Number(meta.revision))
+        .select("revision,updated_at")
+        .maybeSingle();
+      if(updateError) throw updateError;
+      if(!saved) {
+        setCloudChecked(false);
+        setCloudStatus("تعارض أثناء المزامنة التلقائية. احتفظ جوري ببيانات الجهاز ولم يكتب فوق النسخة السحابية.");
+        return;
+      }
+
+      const nextMeta={revision:Number(saved.revision),updatedAt:saved.updated_at||""};
+      await AsyncStorage.setItem(syncMetaKey,JSON.stringify(nextMeta));
+      setCloudRevision(nextMeta.revision);
+      setCloudRemoteData({...snapshot});
+      setCloudUpdatedAt(nextMeta.updatedAt);
+      const currentPending=await AsyncStorage.getItem(pendingSyncKey);
+      if(currentPending===pendingMarker) await AsyncStorage.removeItem(pendingSyncKey);
+      if(dataRef.current!==snapshot) {
+        await AsyncStorage.setItem(pendingSyncKey,String(Date.now()));
+        scheduleAutomaticSync();
+      } else {
+        setCloudStatus("تمت مزامنة التعديلات تلقائياً. رقم المراجعة: "+nextMeta.revision+".");
+      }
+    } catch(error) {
+      setCloudStatus("تعذرت المزامنة التلقائية حالياً: "+(error.message||"تحقق من الاتصال ثم أعد المحاولة."));
+    } finally {
+      autoSyncLock.current=false;
+    }
+  };
+
+  const scheduleAutomaticSync = () => {
+    if(autoSyncTimer.current) clearTimeout(autoSyncTimer.current);
+    autoSyncTimer.current=setTimeout(() => {
+      autoSyncTimer.current=null;
+      attemptAutomaticSync();
+    },1200);
+  };
+
+  useEffect(() => {
+    if(!organizationId || !supabase) return;
+    const networkSubscription=Network.addNetworkStateListener(state=>{
+      if(state.isConnected===true && state.isInternetReachable!==false) attemptAutomaticSync();
+    });
+    const appSubscription=AppState.addEventListener("change",state=>{
+      if(state==="active") attemptAutomaticSync();
+    });
+    attemptAutomaticSync();
+    return ()=>{
+      networkSubscription.remove();
+      appSubscription.remove();
+      if(autoSyncTimer.current) clearTimeout(autoSyncTimer.current);
+    };
+  },[organizationId]);
+
   const persist = async next => {
     setData(next);
-    try { await AsyncStorage.setItem(storageKey,JSON.stringify(next)); setStorageError(false); }
-    catch (_) { setStorageError(true); Alert.alert("تنبيه","تعذر حفظ البيانات على الجهاز. تحقق من مساحة التخزين."); }
+    dataRef.current=next;
+    try {
+      await AsyncStorage.setItem(storageKey,JSON.stringify(next));
+      setStorageError(false);
+      if(syncMetaKey) {
+        const metaRaw=await AsyncStorage.getItem(syncMetaKey);
+        if(metaRaw) {
+          await AsyncStorage.setItem(pendingSyncKey,String(Date.now()));
+          scheduleAutomaticSync();
+        }
+      }
+    } catch (_) {
+      setStorageError(true);
+      Alert.alert("تنبيه","تعذر حفظ البيانات على الجهاز. تحقق من مساحة التخزين.");
+    }
   };
 
   const refreshCloudStatus = async () => {
@@ -357,7 +469,9 @@ export default function App() {
               setCloudRevision(Number(saved.revision));
               setCloudRemoteData({...data});
               setCloudUpdatedAt(saved.updated_at||"");
-              setCloudStatus("تم رفع بيانات هذا الجهاز بنجاح. رقم المراجعة: "+saved.revision+".");
+              await AsyncStorage.setItem(syncMetaKey,JSON.stringify({revision:Number(saved.revision),updatedAt:saved.updated_at||""}));
+              await AsyncStorage.removeItem(pendingSyncKey);
+              setCloudStatus("تم رفع بيانات هذا الجهاز بنجاح. المزامنة التلقائية مفعّلة للتعديلات القادمة.");
             } else {
               if(cloudRevision!==null) {
                 setCloudChecked(false);
@@ -373,7 +487,9 @@ export default function App() {
               setCloudRevision(Number(saved.revision));
               setCloudRemoteData({...data});
               setCloudUpdatedAt(saved.updated_at||"");
-              setCloudStatus("تم إنشاء أول نسخة سحابية بنجاح. رقم المراجعة: "+saved.revision+".");
+              await AsyncStorage.setItem(syncMetaKey,JSON.stringify({revision:Number(saved.revision),updatedAt:saved.updated_at||""}));
+              await AsyncStorage.removeItem(pendingSyncKey);
+              setCloudStatus("تم إنشاء أول نسخة سحابية بنجاح. المزامنة التلقائية مفعّلة للتعديلات القادمة.");
             }
           } catch(error) {
             setCloudStatus("تعذر رفع البيانات: "+(error.message||"خطأ غير معروف"));
@@ -420,10 +536,13 @@ export default function App() {
             const safeRemote={...INITIAL,...latest.data};
             await AsyncStorage.setItem(storageKey,JSON.stringify(safeRemote));
             setData(safeRemote);
+            dataRef.current=safeRemote;
             setStorageError(false);
             setCloudRemoteData(safeRemote);
             setCloudUpdatedAt(latest.updated_at||"");
-            setCloudStatus("تم تحميل النسخة السحابية. حُفظت نسخة الجهاز السابقة احتياطياً.");
+            await AsyncStorage.setItem(syncMetaKey,JSON.stringify({revision:Number(latest.revision),updatedAt:latest.updated_at||""}));
+            await AsyncStorage.removeItem(pendingSyncKey);
+            setCloudStatus("تم تحميل النسخة السحابية. حُفظت نسخة الجهاز السابقة احتياطياً، والمزامنة التلقائية مفعّلة.");
             Alert.alert("اكتمل التحميل","تم تحميل النسخة السحابية مع الاحتفاظ بنسخة احتياطية محلية من البيانات السابقة.");
           } catch(error) {
             setStorageError(true);
@@ -1098,7 +1217,7 @@ export default function App() {
       <Btn title={cloudBusy?"جارٍ التنفيذ...":"1. فحص النسخة السحابية"} onPress={refreshCloudStatus}/>
       <Btn title="2. رفع بيانات هذا الجهاز إلى السحابة" onPress={uploadLocalData}/>
       <Btn title="3. تحميل النسخة السحابية إلى هذا الجهاز" onPress={downloadCloudData} secondary/>
-      <Text style={s.hint}>الرفع متاح وفق صلاحيات المالك أو المدير في Supabase. إذا ظهرت نسخة أحدث، يوقف جوري العملية ويطلب إعادة الفحص. التحميل يحفظ نسخة محلية احتياطية قبل الاستبدال.</Text>
+      <Text style={s.hint}>بعد أول رفع أو تحميل ناجح، تُزامَن التعديلات الجديدة تلقائياً عند توفر الإنترنت. إذا عدّل جهاز آخر النسخة السحابية، تتوقف المزامنة لحماية البيانات وتحتاج إلى مراجعة يدوية.</Text>
     </Card>
     <Card>
       <Text style={s.cardTitle}>النسخة الحالية</Text>
