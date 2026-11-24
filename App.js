@@ -377,7 +377,7 @@ export default function App() {
       appSubscription.remove();
       if(autoSyncTimer.current) clearTimeout(autoSyncTimer.current);
     };
-  },[organizationId,loading,loadedStorageKey,storageKey]);
+  },[organizationId,organizationRole,loading,loadedStorageKey,storageKey]);
 
   const persist = async next => {
     setData(next);
