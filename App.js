@@ -40,6 +40,10 @@ export default function App() {
   const [userName,setUserName] = useState("");
   const [userRole,setUserRole] = useState("موظف");
   const [backupText,setBackupText] = useState("");
+  const [purchaseItem,setPurchaseItem] = useState("");
+  const [purchaseQty,setPurchaseQty] = useState("");
+  const [purchaseCost,setPurchaseCost] = useState("");
+  const [supplier,setSupplier] = useState("");
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then(raw => {
@@ -84,6 +88,28 @@ export default function App() {
     else stock=[{id:Date.now().toString(),name:itemName.trim(),quantity:q},...data.stock];
     const movements=[...(data.movements||[]),{id:Date.now().toString(),itemId:found?found.id:stock[0].id,itemName:itemName.trim(),type:"إضافة",quantity:q,date:stamp()}];
     await persist({...data,stock,movements}); setItemName(""); setItemQty("");
+  };
+
+  const addPurchase = async () => {
+    const q=Number(purchaseQty), cost=Number(purchaseCost);
+    if(!purchaseItem.trim() || !purchaseQty.trim() || !purchaseCost.trim() || !Number.isFinite(q) || q<=0 || !Number.isFinite(cost) || cost<=0) {
+      Alert.alert("بيانات غير مكتملة","أدخل الصنف والكمية وتكلفة الشراء الإجمالية بقيم أكبر من صفر."); return;
+    }
+    const found=data.stock.find(x=>x.name.trim().toLowerCase()===purchaseItem.trim().toLowerCase());
+    const oldQty=found?Number(found.quantity)||0:0;
+    const oldCost=found?Number(found.unitCost)||0:0;
+    const unitCost=cost/q;
+    const newUnitCost=(oldQty+q)>0?((oldQty*oldCost)+cost)/(oldQty+q):unitCost;
+    const itemId=found?found.id:Date.now().toString();
+    const stock=found
+      ? data.stock.map(x=>x.id===itemId?{...x,quantity:oldQty+q,unitCost:newUnitCost}:x)
+      : [{id:itemId,name:purchaseItem.trim(),quantity:q,unitCost},...data.stock];
+    const date=stamp();
+    const purchase={id:date+Math.random().toString(36).slice(2,6),itemId,itemName:purchaseItem.trim(),quantity:q,totalCost:cost,unitCost,supplier:supplier.trim(),date};
+    const movements=[...(data.movements||[]),{id:purchase.id,itemId,itemName:purchaseItem.trim(),type:"شراء",quantity:q,date}];
+    await persist({...data,stock,purchases:[...(data.purchases||[]),purchase],movements});
+    setPurchaseItem("");setPurchaseQty("");setPurchaseCost("");setSupplier("");
+    Alert.alert("تم تسجيل الشراء","تم تحديث رصيد المخزون ومتوسط تكلفة الوحدة.");
   };
 
   const issueStock = async item => {
@@ -182,7 +208,9 @@ export default function App() {
   </Card><Section>سجل العمليات</Section>
   {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
 
-  const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{x.quantity}</Text><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"?"-": "+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف ويُخصم من الرصيد. لم تُضف تكلفة الأصناف أو تقييم المخزون بعد.</Text></>;
+  const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><View><Text style={s.amount}>{x.quantity}</Text>{x.unitCost? <Text style={s.hint}>متوسط تكلفة الوحدة: {money(x.unitCost)}</Text>:null}</View><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>تقييم المخزون التقريبي</Section><Card><Text style={s.bigValue}>{money(data.stock.reduce((sum,x)=>sum+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text><Text style={s.hint}>القيمة محسوبة من الرصيد الحالي ومتوسط تكلفة الوحدة المسجل، ولا تشمل الأصناف التي لم تُسجل لها تكلفة شراء.</Text></Card><Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"?"-": "+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف ويُخصم من الرصيد. لم تُضف تكلفة الأصناف أو تقييم المخزون بعد.</Text></>;
+
+  const purchasesScreen = <><Section>تسجيل مشتريات جديدة</Section><Text style={s.body}>أدخل التكلفة الإجمالية للكمية المشتراة. سيُحدّث التطبيق متوسط تكلفة الوحدة المرجّح للصنف.</Text><Card><Field label="اسم الصنف" value={purchaseItem} onChange={setPurchaseItem}/><Field label="الكمية المشتراة" value={purchaseQty} onChange={setPurchaseQty} keyboardType="decimal-pad"/><Field label="إجمالي تكلفة الشراء (ج.س)" value={purchaseCost} onChange={setPurchaseCost} keyboardType="decimal-pad"/><Field label="المورد (اختياري)" value={supplier} onChange={setSupplier}/><Btn title="حفظ المشتريات وتحديث المخزون" onPress={addPurchase}/></Card><Section>سجل المشتريات</Section>{(data.purchases||[]).length===0?<Empty/>:(data.purchases||[]).slice().reverse().map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.totalCost)}</Text><Text style={s.cardTitle}>{p.itemName}</Text></View><Text style={s.hint}>الكمية: {p.quantity} • تكلفة الوحدة: {money(p.unitCost)}</Text>{p.supplier?<Text style={s.hint}>المورد: {p.supplier}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>; 
 
   const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
 
@@ -196,6 +224,7 @@ export default function App() {
   if(screen==="المبيعات") body=financeScreen("sales","تسجيل المبيعات","سجّل كل عملية بيع، ويمكنك إدخال كمية المنتج.");
   else if(screen==="المصروفات") body=financeScreen("expenses","تسجيل المصروفات","سجّل مصروفات التشغيل والمشتريات.");
   else if(screen==="المخزون") body=stockScreen;
+  else if(screen==="المشتريات") body=purchasesScreen;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
