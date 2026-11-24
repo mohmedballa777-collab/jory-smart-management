@@ -11,7 +11,9 @@
       "versionCode": 1
     },
     "extra": {
-      "appPurpose": "إدارة معامل جوري للصناعات المتعددة"
+      "appPurpose": "إدارة معامل جوري للصناعات المتعددة",
+      "supabaseUrl": "https://auxoehfzccqdouimaiyh.supabase.co",
+      "supabasePublishableKey": "sb_publishable_xnGL7WDBgePV3QMovFQE6Q_yPxmXi8a"
     }
   }
 }
