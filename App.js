@@ -43,6 +43,7 @@ export default function App() {
   const [authMode,setAuthMode] = useState("signin");
   const [authMessage,setAuthMessage] = useState("");
   const [organizationId,setOrganizationId] = useState("");
+  const [organizationRole,setOrganizationRole] = useState("");
   const [organizationName,setOrganizationName] = useState("معامل جوري للصناعات المتعددة");
   const [membershipLoading,setMembershipLoading] = useState(false);
   const [cloudBusy,setCloudBusy] = useState(false);
@@ -169,16 +170,17 @@ export default function App() {
   }, [storageKey]);
 
   const loadMembership = async userId => {
-    if(!supabase || !userId) { setOrganizationId(""); return; }
+    if(!supabase || !userId) { setOrganizationId(""); setOrganizationRole(""); return; }
     setMembershipLoading(true);
     const { data: membership, error } = await supabase
       .from("jory_memberships")
-      .select("organization_id")
+      .select("organization_id,role")
       .eq("user_id", userId)
       .limit(1)
       .maybeSingle();
     if(error) setAuthMessage("تعذر قراءة عضوية الحساب: " + error.message);
     setOrganizationId(membership?.organization_id || "");
+    setOrganizationRole(membership?.role || "");
     setMembershipLoading(false);
   };
 
@@ -198,6 +200,7 @@ export default function App() {
     const {data:{subscription}} = supabase.auth.onAuthStateChange((_event,session) => {
       setAuthSession(session || null);
       setOrganizationId("");
+      setOrganizationRole("");
       if(session?.user?.id) loadMembership(session.user.id);
       else setMembershipLoading(false);
     });
@@ -237,6 +240,7 @@ export default function App() {
         .select("id").single();
       if(error) throw error;
       setOrganizationId(org.id);
+      setOrganizationRole("owner");
       setAuthMessage("تم إنشاء المؤسسة وتسجيل حسابك كمالك.");
     } catch(error) {
       setAuthMessage("تعذر إنشاء المؤسسة: " + error.message);
@@ -247,7 +251,7 @@ export default function App() {
     if(!supabase) return;
     const {error}=await supabase.auth.signOut();
     if(error) setAuthMessage("تعذر تسجيل الخروج: " + error.message);
-    else { setAuthSession(null); setOrganizationId(""); }
+    else { setAuthSession(null); setOrganizationId(""); setOrganizationRole(""); }
   };
 
   const importLegacyLocalData = () => {
@@ -287,7 +291,7 @@ export default function App() {
   };
 
   const attemptAutomaticSync = async () => {
-    if(!supabase || !organizationId || !syncMetaKey || autoSyncLock.current) return;
+    if(!supabase || !organizationId || !syncMetaKey || !["owner","admin"].includes(organizationRole) || autoSyncLock.current) return;
     let pendingMarker=null;
     try {
       pendingMarker=await AsyncStorage.getItem(pendingSyncKey);
@@ -431,6 +435,10 @@ export default function App() {
   };
 
   const uploadLocalData = () => {
+    if(!["owner","admin"].includes(organizationRole)) {
+      Alert.alert("صلاحية غير كافية","رفع البيانات والمزامنة التلقائية متاحان لمالك المؤسسة أو المدير الإداري فقط. يمكنك تحميل نسخة المؤسسة للقراءة.");
+      return;
+    }
     if(legacyLocalAvailable) {
       Alert.alert("استورد بياناتك السابقة أولاً","وجد جوري بيانات محلية من النسخة السابقة لم تُنقل إلى حسابك بعد. استوردها أولاً حتى لا ترفع سجلاً فارغاً أو ناقصاً.");
       return;
@@ -1222,6 +1230,7 @@ export default function App() {
     <Card>
       <Text style={s.cardTitle}>حالة الاتصال</Text>
       <Text style={s.body}>المؤسسة: {organizationId?"مرتبطة بحسابك":"غير محددة"}</Text>
+      <Text style={s.body}>صلاحية الحساب: {organizationRole||"غير محددة"}</Text>
       <Text style={s.status}>{cloudStatus}</Text>
       {cloudUpdatedAt?<Text style={s.hint}>آخر تحديث سحابي: {new Date(cloudUpdatedAt).toLocaleString("ar")}</Text>:null}
       <Btn title={cloudBusy?"جارٍ التنفيذ...":"1. فحص النسخة السحابية"} onPress={refreshCloudStatus}/>
