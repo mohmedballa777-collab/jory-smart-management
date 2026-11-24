@@ -271,6 +271,19 @@ export default function App() {
     };
   },[data]);
 
+  const selectedRecipePreview=(data.recipes||[]).find(x=>x.id===selectedRecipeId);
+  const previewOutput=Number(productionOutput);
+  const productionPreview=selectedRecipePreview && Number.isFinite(previewOutput) && previewOutput>0
+    ? selectedRecipePreview.materials.map(m=>{
+        const required=Number(m.quantity)*previewOutput/Number(selectedRecipePreview.baseOutput);
+        const item=data.stock.find(x=>x.id===m.itemId);
+        return {name:m.itemName,required,available:item?Number(item.quantity)||0:0,unitCost:item?Number(item.unitCost)||0:0};
+      })
+    : [];
+  const previewMaterialCost=productionPreview.reduce((sum,x)=>sum+x.required*x.unitCost,0);
+  const previewHasIssue=productionPreview.some(x=>x.available<x.required || x.unitCost<=0);
+  const previewTotal=previewMaterialCost+(Number(productionExtraCost)||0);
+
   const addUser = async () => {
     if(!userName.trim()){Alert.alert("بيانات ناقصة","أدخل اسم المستخدم.");return;}
     await persist({...data,users:[...data.users,{id:Date.now().toString(),name:userName.trim(),role:userRole}]});
@@ -334,6 +347,7 @@ export default function App() {
     {selectedRecipeId?<Text style={s.status}>الوصفة المختارة: {(data.recipes||[]).find(x=>x.id===selectedRecipeId)?.name} • تُضبط كميات المواد تلقائياً حسب حجم الدفعة</Text>:null}
     <Field label="اسم المنتج النهائي" value={productionProduct} onChange={v=>{setProductionProduct(v);setSelectedRecipeId("");}} placeholder="مثال: صابون TRUST 350 مل"/>
     <Field label="الكمية المنتجة" value={productionOutput} onChange={setProductionOutput} keyboardType="decimal-pad"/>
+    {selectedRecipeId && previewOutput>0?<Card><Text style={s.cardTitle}>تقدير ما قبل الإنتاج</Text>{productionPreview.map(x=><Text key={x.name} style={s.hint}>{x.name}: مطلوب {x.required.toFixed(2)} • متاح {x.available} • تكلفة تقديرية {money(x.required*x.unitCost)}</Text>)}<Text style={s.hint}>إجمالي تكلفة الدفعة المتوقعة: {money(previewTotal)}</Text><Text style={s.hint}>تكلفة الوحدة المتوقعة: {money(previewTotal/previewOutput)}</Text><Text style={[s.status,{color:previewHasIssue?C.red:C.brand}]}>{previewHasIssue?"تنبيه: راجع الرصيد أو تكلفة إحدى المواد قبل الإنتاج":"المواد متاحة وتكاليفها مسجلة"}</Text></Card>:null}
     {!selectedRecipeId?<View style={s.field}><Text style={s.label}>المواد الخام المستهلكة (مادة في كل سطر)</Text><TextInput value={productionMaterials} onChangeText={setProductionMaterials} multiline numberOfLines={5} placeholder={"مثال:\nصابون خام | 20\nعبوات 350 مل | 50"} placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:120}]}/><Text style={s.hint}>الصيغة: اسم المادة | الكمية. استخدم سطراً مستقلاً لكل مادة.</Text></View>:<Btn title="إلغاء الوصفة واستخدام مواد يدوية" onPress={()=>setSelectedRecipeId("")} secondary/>}
     <Field label="تكاليف إضافية للدفعة (اختياري)" value={productionExtraCost} onChange={setProductionExtraCost} keyboardType="decimal-pad"/>
     <Field label="ملاحظات (اختياري)" value={productionNote} onChange={setProductionNote}/>
