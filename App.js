@@ -11,7 +11,7 @@ const DEPARTMENTS = [
   ["الإدارة العامة","🏢"],["الإدارة المالية","💰"],["المشروعات والتشغيل","⚙️"],["المبيعات والتسويق","🛒"],
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
-const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
+const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], staff:[], attendance:[], payrollPayments:[], users:[{id:"owner",name:"صاحب المؤسسة",role:"مدير عام"}], project:"TRUST - الصابون" };
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -440,7 +440,7 @@ export default function App() {
   const markAttendance = async () => {
     const employee=(data.staff||[]).find(x=>x.id===attendanceStaff);
     if(!employee){Alert.alert("اختر الموظف","حدد الموظف أولاً.");return;}
-    if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(attendanceDate)){Alert.alert("التاريخ غير صحيح","اكتب التاريخ بصيغة YYYY-MM-DD.");return;}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(attendanceDate)){Alert.alert("التاريخ غير صحيح","اكتب التاريخ بصيغة YYYY-MM-DD.");return;}
     const rows=data.attendance||[];
     if(rows.some(x=>x.staffId===employee.id && x.date===attendanceDate)){Alert.alert("سجل موجود","تم تسجيل حالة هذا الموظف في التاريخ نفسه.");return;}
     const record={id:"att-"+Date.now(),staffId:employee.id,staffName:employee.name,date:attendanceDate,status:attendanceStatus,note:attendanceNote.trim()};
