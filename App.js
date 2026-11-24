@@ -50,6 +50,7 @@ export default function App() {
   const [expenseCategory,setExpenseCategory] = useState("تشغيل");
   const [expenseCenter,setExpenseCenter] = useState("عام");
   const [expenseProject,setExpenseProject] = useState("TRUST - الصابون");
+  const [openingCashInput,setOpeningCashInput] = useState("");
   const [productionProduct,setProductionProduct] = useState("");
   const [productionOutput,setProductionOutput] = useState("");
   const [productionMaterials,setProductionMaterials] = useState("");
@@ -112,6 +113,8 @@ export default function App() {
       entry={...entry,customerId:customer?.id,customerName:customer?.name||"بيع نقدي",paidAmount:paid,dueAmount:v-paid};
     }
     let next={...data,[type]:[entry,...data[type]]};
+    const cashAmount=type==="sales"?Number(entry.paidAmount??entry.amount):type==="expenses"?Number(entry.amount):0;
+    if(cashAmount>0) next.cashMovements=[{id:"cash-"+entry.id,referenceId:entry.id,type:type==="sales"?"قبض مبيعات":"صرف مصروف",direction:type==="sales"?"in":"out",amount:cashAmount,description:entry.name,date:entry.date},...(data.cashMovements||[])];
     if(type==="sales" && quantity.trim()) {
       const q=Number(quantity);
       if(!Number.isFinite(q) || q<=0) { Alert.alert("كمية غير صحيحة","أدخل كمية بيع أكبر من صفر."); return; }
@@ -163,7 +166,8 @@ export default function App() {
       return {...sale,paidAmount:Number(sale.paidAmount||0)+applied,dueAmount:Number(sale.dueAmount)-applied};
     });
     const receipt={id:"receipt-"+Date.now(),customerId:customer.id,customerName:customer.name,amount:value,date:stamp()};
-    await persist({...data,sales:updatedSales,receipts:[receipt,...(data.receipts||[])]});
+    const cashEntry={id:"cash-"+receipt.id,referenceId:receipt.id,type:"تحصيل عميل",direction:"in",amount:value,description:"تحصيل من "+customer.name,date:receipt.date};
+    await persist({...data,sales:updatedSales,receipts:[receipt,...(data.receipts||[])],cashMovements:[cashEntry,...(data.cashMovements||[])]});
     setPaymentAmount("");
     Alert.alert("تم التحصيل","تم توزيع المبلغ على أقدم الفواتير المستحقة.");
   };
@@ -182,9 +186,17 @@ export default function App() {
       return {...p,paidAmount:Number(p.paidAmount||0)+applied,dueAmount:Number(p.dueAmount)-applied};
     });
     const receipt={id:"supplier-payment-"+Date.now(),supplier:supplierName,amount:value,date:stamp()};
-    await persist({...data,purchases,supplierPayments:[receipt,...(data.supplierPayments||[])]});
+    const cashEntry={id:"cash-"+receipt.id,referenceId:receipt.id,type:"سداد مورد",direction:"out",amount:value,description:"سداد إلى "+supplierName,date:receipt.date};
+    await persist({...data,purchases,supplierPayments:[receipt,...(data.supplierPayments||[])],cashMovements:[cashEntry,...(data.cashMovements||[])]});
     setSupplierPaymentAmount("");
     Alert.alert("تم السداد","تم توزيع السداد على أقدم فواتير المورد.");
+  };
+
+  const saveOpeningCash = async () => {
+    const value=openingCashInput.trim()===""?0:Number(openingCashInput);
+    if(!Number.isFinite(value)) { Alert.alert("قيمة غير صحيحة","أدخل رصيداً افتتاحياً رقمياً."); return; }
+    await persist({...data,openingCash:value});
+    Alert.alert("تم الحفظ","تم تحديث الرصيد الافتتاحي للخزينة.");
   };
 
   const addStock = async () => {
@@ -220,7 +232,8 @@ export default function App() {
     if(!Number.isFinite(paid)||paid<0||paid>cost) { Alert.alert("المبلغ المدفوع غير صحيح","أدخل مبلغاً من صفر إلى إجمالي تكلفة الشراء."); return; }
     const purchase={id:date+Math.random().toString(36).slice(2,6),itemId,itemName:purchaseItem.trim(),quantity:q,totalCost:cost,unitCost,supplier:supplier.trim()||"مورد غير محدد",paidAmount:paid,dueAmount:cost-paid,date};
     const movements=[...(data.movements||[]),{id:purchase.id,itemId,itemName:purchaseItem.trim(),type:"شراء",quantity:q,date}];
-    await persist({...data,stock,purchases:[...(data.purchases||[]),purchase],movements});
+    const cashMovements=paid>0?[{id:"cash-"+purchase.id,referenceId:purchase.id,type:"سداد مشتريات",direction:"out",amount:paid,description:"شراء "+purchase.itemName+" من "+purchase.supplier,date},...(data.cashMovements||[])]:[...(data.cashMovements||[])];
+    await persist({...data,stock,purchases:[...(data.purchases||[]),purchase],movements,cashMovements});
     setPurchaseItem("");setPurchaseQty("");setPurchaseCost("");setSupplier("");setPurchasePaid("");
     Alert.alert("تم تسجيل الشراء","تم تحديث رصيد المخزون ومتوسط تكلفة الوحدة.");
   };
@@ -405,7 +418,7 @@ export default function App() {
     {text:"حذف",style:"destructive",onPress:()=>{
       const record=(data[type]||[]).find(x=>x.id===id);
       if(type==="sales" && record && record.customerId) { Alert.alert("لا يمكن حذف الفاتورة","الفاتورة مرتبطة بحساب عميل؛ صحّحها يدوياً بعد مراجعة التحصيلات حتى لا تختل المديونية."); return; }
-      let next={...data,[type]:(data[type]||[]).filter(x=>x.id!==id)};
+      let next={...data,[type]:(data[type]||[]).filter(x=>x.id!==id),cashMovements:(data.cashMovements||[]).filter(x=>x.referenceId!==id)};
       if(type==="sales" && record && record.itemId && Number(record.quantity)>0) {
         next.stock=data.stock.map(x=>x.id===record.itemId?{...x,quantity:Number(x.quantity)+Number(record.quantity)}:x);
         if(record.lotNumber) next.productions=(data.productions||[]).map(p=>p.lotNumber===record.lotNumber?{...p,remainingQuantity:Number(p.remainingQuantity??p.outputQuantity)+Number(record.quantity)}:p);
@@ -430,7 +443,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"],["الخزينة","الخزينة","💰"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
@@ -467,6 +480,16 @@ export default function App() {
     })}
     <Section>آخر السداديات</Section>
     {(data.supplierPayments||[]).length===0?<Empty>لا توجد سداديات مسجلة.</Empty>:(data.supplierPayments||[]).slice(0,10).map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.amount)}</Text><Text style={s.cardTitle}>{p.supplier}</Text></View><Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}
+  </>;
+
+  const cashScreen = <>
+    <Section>الرصيد النقدي</Section>
+    <Card><Text style={s.metricLabel}>الرصيد الحالي التقديري</Text><Text style={s.bigValue}>{money((Number(data.openingCash)||0)+(data.cashMovements||[]).reduce((sum,x)=>sum+(x.direction==="in"?1:-1)*Number(x.amount||0),0))}</Text><Text style={s.hint}>الرصيد الافتتاحي + المقبوضات - المدفوعات المسجلة.</Text></Card>
+    <Card><Field label="الرصيد الافتتاحي للخزينة" value={openingCashInput} onChange={setOpeningCashInput} keyboardType="decimal-pad" placeholder={String(data.openingCash??0)}/><Btn title="حفظ الرصيد الافتتاحي" onPress={saveOpeningCash}/></Card>
+    <Section>ملخص حركة النقدية</Section>
+    <View style={s.metrics}><Card><Text style={s.metricLabel}>إجمالي المقبوضات</Text><Text style={s.metricValue}>{money((data.cashMovements||[]).filter(x=>x.direction==="in").reduce((sum,x)=>sum+Number(x.amount||0),0))}</Text></Card><Card><Text style={s.metricLabel}>إجمالي المدفوعات</Text><Text style={s.metricValue}>{money((data.cashMovements||[]).filter(x=>x.direction==="out").reduce((sum,x)=>sum+Number(x.amount||0),0))}</Text></Card></View>
+    <Section>سجل حركة الخزينة</Section>
+    {(data.cashMovements||[]).length===0?<Empty>لا توجد حركات نقدية مسجلة بعد.</Empty>:(data.cashMovements||[]).map(x=><Card key={x.id}><View style={s.row}><Text style={[s.amount,{color:x.direction==="in"?C.brand:C.red}]}>{x.direction==="in"?"+":"-"}{money(x.amount)}</Text><Text style={s.cardTitle}>{x.type}</Text></View><Text style={s.hint}>{x.description}</Text><Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text></Card>)}
   </>;
 
   const reportScreen = <>
@@ -576,6 +599,7 @@ export default function App() {
   else if(screen==="المشتريات") body=purchasesScreen;
   else if(screen==="الإنتاج") body=productionScreen;
   else if(screen==="الجودة") body=qualityScreen;
+  else if(screen==="الخزينة") body=cashScreen;
   else if(screen==="التقارير") body=reportScreen;
   else if(screen==="العملاء") body=customersScreen;
   else if(screen==="الموردون") body=suppliersScreen;
