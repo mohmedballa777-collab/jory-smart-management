@@ -47,6 +47,9 @@ export default function App() {
   const [purchasePaid,setPurchasePaid] = useState("");
   const [supplierPaymentName,setSupplierPaymentName] = useState("");
   const [supplierPaymentAmount,setSupplierPaymentAmount] = useState("");
+  const [expenseCategory,setExpenseCategory] = useState("تشغيل");
+  const [expenseCenter,setExpenseCenter] = useState("عام");
+  const [expenseProject,setExpenseProject] = useState("TRUST - الصابون");
   const [productionProduct,setProductionProduct] = useState("");
   const [productionOutput,setProductionOutput] = useState("");
   const [productionMaterials,setProductionMaterials] = useState("");
@@ -100,6 +103,7 @@ export default function App() {
       Alert.alert("بيانات ناقصة","أدخل الوصف والمبلغ الصحيح الأكبر من صفر."); return;
     }
     let entry={id:Date.now().toString(),name:name.trim(),amount:v,quantity:quantity.trim(),note:note.trim(),date:stamp()};
+    if(type==="expenses") entry={...entry,category:expenseCategory.trim()||"غير مصنف",costCenter:expenseCenter.trim()||"عام",project:expenseProject.trim()||"عام"};
     if(type==="sales") {
       const customer=saleCustomerName.trim()?(data.customers||[]).find(x=>x.name.trim().toLowerCase()===saleCustomerName.trim().toLowerCase()):null;
       if(saleCustomerName.trim() && !customer) { Alert.alert("العميل غير مسجل","أضف العميل أولاً من صفحة العملاء أو اترك الحقل فارغاً."); return; }
@@ -474,6 +478,22 @@ export default function App() {
     <Card><Text style={s.metricLabel}>تكلفة البضاعة المسجلة</Text><Text style={s.metricValue}>{money(totals.cogs)}</Text><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(totals.gross)}</Text><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text></Card>
     <Card><Text style={s.metricLabel}>إجمالي مديونيات العملاء</Text><Text style={[s.bigValue,{color:C.red}]}>{money((data.sales||[]).reduce((sum,x)=>sum+Number(x.dueAmount||0),0))}</Text><Text style={s.hint}>المبالغ المتبقية على فواتير العملاء المسجلين.</Text></Card>
     <Card><Text style={s.metricLabel}>مستحقات الموردين</Text><Text style={[s.bigValue,{color:C.red}]}>{money((data.purchases||[]).reduce((sum,x)=>sum+Number(x.dueAmount||0),0))}</Text></Card>
+    <Section>تحليل المصروفات حسب المشروع</Section>
+    {Array.from(new Set((data.expenses||[]).map(x=>x.project||"عام"))).length===0?<Empty>لا توجد مصروفات مسجلة.</Empty>:Array.from(new Set((data.expenses||[]).map(x=>x.project||"عام"))).map(project=>{
+      const rows=(data.expenses||[]).filter(x=>(x.project||"عام")===project);
+      const total=rows.reduce((sum,x)=>sum+Number(x.amount||0),0);
+      return <Card key={project}><Text style={s.cardTitle}>{project}</Text><Text style={s.bigValue}>{money(total)}</Text><Text style={s.hint}>عدد العمليات: {rows.length}</Text></Card>;
+    })}
+    <Section>تحليل المصروفات حسب مركز التكلفة</Section>
+    {Array.from(new Set((data.expenses||[]).map(x=>x.costCenter||"عام"))).map(center=>{
+      const rows=(data.expenses||[]).filter(x=>(x.costCenter||"عام")===center);
+      return <Card key={center}><Text style={s.cardTitle}>{center}</Text><Text style={s.amount}>{money(rows.reduce((sum,x)=>sum+Number(x.amount||0),0))}</Text></Card>;
+    })}
+    <Section>تحليل المصروفات حسب التصنيف</Section>
+    {Array.from(new Set((data.expenses||[]).map(x=>x.category||"غير مصنف"))).map(category=>{
+      const rows=(data.expenses||[]).filter(x=>(x.category||"غير مصنف")===category);
+      return <Card key={category}><Text style={s.cardTitle}>{category}</Text><Text style={s.amount}>{money(rows.reduce((sum,x)=>sum+Number(x.amount||0),0))}</Text></Card>;
+    })}
     <Section>مؤشرات التشغيل</Section>
     <View style={s.metrics}>
       <Card><Text style={s.metricLabel}>أصناف المخزون</Text><Text style={s.metricValue}>{data.stock.length}</Text></Card>
@@ -498,13 +518,14 @@ export default function App() {
   const financeScreen = (type,title,subtitle) => <><Section>{title}</Section><Text style={s.body}>{subtitle}</Text><Card>
     <Field label="الوصف" value={name} onChange={setName} placeholder={type==="sales"?"مثال: بيع صابون TRUST":"مثال: شراء عبوات"}/>
     <Field label="المبلغ بالجنيه السوداني" value={amount} onChange={setAmount} keyboardType="decimal-pad"/>
+    {type==="expenses"?<><Field label="تصنيف المصروف" value={expenseCategory} onChange={setExpenseCategory} placeholder="تشغيل، نقل، أجور، تسويق..."/><Field label="مركز التكلفة / الإدارة" value={expenseCenter} onChange={setExpenseCenter} placeholder="الإنتاج، المبيعات، الإدارة..."/><Field label="المشروع" value={expenseProject} onChange={setExpenseProject} placeholder="TRUST - الصابون أو عام"/></>:null}
     {type==="sales"?<><Field label="العميل المسجل (اختياري)" value={saleCustomerName} onChange={setSaleCustomerName} placeholder="اكتب اسم العميل المسجل"/><Field label="المبلغ المحصل الآن (اتركه فارغاً للسداد الكامل)" value={salePaid} onChange={setSalePaid} keyboardType="decimal-pad"/></>:null}
     <Field label="الكمية (اختياري)" value={quantity} onChange={setQuantity} keyboardType="decimal-pad"/>
     {type==="sales" && quantity.trim() && (data.productions||[]).some(x=>x.productName.trim().toLowerCase()===name.trim().toLowerCase())?<Field label="رقم تشغيلة المنتج" value={saleLot} onChange={setSaleLot} placeholder="أدخل رقم التشغيلة"/>:null}
     <Field label="ملاحظات (اختياري)" value={note} onChange={setNote}/>
     <Btn title="حفظ العملية" onPress={()=>addFinancial(type)}/>
   </Card><Section>سجل العمليات</Section>
-  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.cogs!==undefined?<Text style={s.hint}>تكلفة البضاعة: {money(x.cogs)} • الربح الإجمالي: {money(x.grossProfit)}</Text>:null}{type==="sales"?<Text style={s.hint}>العميل: {x.customerName||"بيع نقدي"} • المحصل: {money(x.paidAmount??x.amount)} • المتبقي: {money(x.dueAmount||0)}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
+  {data[type].length===0?<Empty/>:data[type].map(x=><Card key={x.id}><View style={s.row}><Text style={s.amount}>{money(x.amount)}</Text><Text style={s.cardTitle}>{x.name}</Text></View>{x.quantity?<Text style={s.hint}>الكمية: {x.quantity}</Text>:null}{x.cogs!==undefined?<Text style={s.hint}>تكلفة البضاعة: {money(x.cogs)} • الربح الإجمالي: {money(x.grossProfit)}</Text>:null}{type==="sales"?<Text style={s.hint}>العميل: {x.customerName||"بيع نقدي"} • المحصل: {money(x.paidAmount??x.amount)} • المتبقي: {money(x.dueAmount||0)}</Text>:null}{type==="expenses"?<Text style={s.hint}>التصنيف: {x.category||"غير مصنف"} • مركز التكلفة: {x.costCenter||"عام"} • المشروع: {x.project||"عام"}</Text>:null}{x.note?<Text style={s.hint}>{x.note}</Text>:null}<Text style={s.hint}>{new Date(x.date).toLocaleString("ar")}</Text><Pressable onPress={()=>removeEntry(type,x.id)}><Text style={s.delete}>حذف السجل</Text></Pressable></Card>)}</>;
 
   const stockScreen = <><Section>إدارة المخزون</Section><Card><Field label="اسم الصنف" value={itemName} onChange={setItemName}/><Field label="الكمية المضافة" value={itemQty} onChange={setItemQty} keyboardType="decimal-pad"/><Btn title="إضافة كمية للمخزون" onPress={addStock}/></Card><Section>الأصناف والأرصدة</Section>{data.stock.length===0?<Empty/>:data.stock.map(x=><Card key={x.id}><View style={s.row}><View><Text style={s.amount}>{x.quantity}</Text>{x.unitCost? <Text style={s.hint}>متوسط تكلفة الوحدة: {money(x.unitCost)}</Text>:null}</View><Text style={s.cardTitle}>{x.name}</Text></View><Field label="كمية الصرف" value={outQty} onChange={setOutQty} keyboardType="decimal-pad"/><Btn title={"صرف من "+x.name} onPress={()=>issueStock(x)} secondary/></Card>)}<Section>تقييم المخزون التقريبي</Section><Card><Text style={s.bigValue}>{money(data.stock.reduce((sum,x)=>sum+(Number(x.quantity)||0)*(Number(x.unitCost)||0),0))}</Text><Text style={s.hint}>القيمة محسوبة من الرصيد الحالي ومتوسط تكلفة الوحدة المسجل، ولا تشمل الأصناف التي لم تُسجل لها تكلفة شراء.</Text></Card><Section>آخر حركات المخزون</Section>{(data.movements||[]).slice(-8).reverse().map(m=><Card key={m.id}><View style={s.row}><Text style={s.amount}>{m.type==="صرف"||m.type==="استهلاك إنتاج"?"-":"+"}{m.quantity}</Text><Text style={s.cardTitle}>{m.itemName}</Text></View><Text style={s.hint}>{new Date(m.date).toLocaleString("ar")}</Text></Card>)}<Text style={s.hint}>يُسجل الصرف والشراء والإضافة. متوسط التكلفة والتقييم تقديريان، ويعتمدان على المشتريات المسجلة.</Text></>;
 
