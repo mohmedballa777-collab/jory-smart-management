@@ -38,7 +38,7 @@ export default function App() {
   const [authReady,setAuthReady] = useState(!isSupabaseConfigured);
   const [authSession,setAuthSession] = useState(null);
   const [authBusy,setAuthBusy] = useState(false);
-  const [authEmail,setAuthEmail] = useState("");
+  const [authEmail,setAuthEmail] = useState("mohmedballa777@gmail.com");
   const [authPassword,setAuthPassword] = useState("");
   const [authMode,setAuthMode] = useState("signin");
   const [authMessage,setAuthMessage] = useState("");
