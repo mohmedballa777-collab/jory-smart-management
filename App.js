@@ -21,8 +21,8 @@ const stamp = () => new Date().toISOString();
 function Field({label,value,onChange,placeholder,keyboardType="default",secureTextEntry=false,autoCapitalize="sentences",autoCorrect=true}) {
   return <View style={s.field}><Text style={s.label}>{label}</Text><TextInput value={value} onChangeText={onChange} placeholder={placeholder||label} placeholderTextColor="#98A2B3" keyboardType={keyboardType} secureTextEntry={secureTextEntry} autoCapitalize={autoCapitalize} autoCorrect={autoCorrect} style={s.input}/></View>;
 }
-function Btn({title,onPress,secondary=false}) {
-  return <Pressable onPress={onPress} style={[s.btn,secondary&&s.btnSecondary]}><Text style={[s.btnText,secondary&&s.btnSecondaryText]}>{title}</Text></Pressable>;
+function Btn({title,onPress,secondary=false,disabled=false}) {
+  return <Pressable onPress={onPress} disabled={disabled} style={[s.btn,secondary&&s.btnSecondary,disabled&&{opacity:0.5}]}><Text style={[s.btnText,secondary&&s.btnSecondaryText]}>{title}</Text></Pressable>;
 }
 function Card({children}) { return <View style={s.card}>{children}</View>; }
 function Section({children}) { return <Text style={s.section}>{children}</Text>; }
@@ -1233,10 +1233,10 @@ export default function App() {
       <Text style={s.body}>صلاحية الحساب: {organizationRole||"غير محددة"}</Text>
       <Text style={s.status}>{cloudStatus}</Text>
       {cloudUpdatedAt?<Text style={s.hint}>آخر تحديث سحابي: {new Date(cloudUpdatedAt).toLocaleString("ar")}</Text>:null}
-      <Btn title={cloudBusy?"جارٍ التنفيذ...":"1. فحص النسخة السحابية"} onPress={refreshCloudStatus}/>
-      <Btn title="2. رفع بيانات هذا الجهاز إلى السحابة" onPress={uploadLocalData}/>
-      <Btn title="3. تحميل النسخة السحابية إلى هذا الجهاز" onPress={downloadCloudData} secondary/>
-      <Text style={s.hint}>بعد أول رفع أو تحميل ناجح، تُزامَن التعديلات الجديدة تلقائياً عند توفر الإنترنت. إذا عدّل جهاز آخر النسخة السحابية، تتوقف المزامنة لحماية البيانات وتحتاج إلى مراجعة يدوية.</Text>
+      <Btn title={cloudBusy?"جارٍ التنفيذ...":"1. فحص النسخة السحابية"} onPress={refreshCloudStatus} disabled={cloudBusy}/>
+      <Btn title="2. رفع بيانات هذا الجهاز إلى السحابة" onPress={uploadLocalData} disabled={cloudBusy}/>
+      <Btn title="3. تحميل النسخة السحابية إلى هذا الجهاز" onPress={downloadCloudData} secondary disabled={cloudBusy}/>
+      <Text style={s.hint}>للمالك والمدير: بعد أول رفع أو تحميل ناجح، تُزامَن التعديلات تلقائياً عند توفر الإنترنت. إذا عدّل جهاز آخر النسخة السحابية، تتوقف المزامنة لحماية البيانات وتحتاج إلى مراجعة يدوية. الموظفون يمكنهم تحميل النسخة وفق صلاحياتهم، ولا يرفعون تعديلاتهم بهذه السياسة.</Text>
     </Card>
     <Card>
       <Text style={s.cardTitle}>النسخة الحالية</Text>
