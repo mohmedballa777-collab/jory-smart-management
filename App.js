@@ -54,6 +54,8 @@ export default function App() {
   const [recipeOutput,setRecipeOutput] = useState("");
   const [recipeMaterials,setRecipeMaterials] = useState("");
   const [selectedRecipeId,setSelectedRecipeId] = useState("");
+  const [productionLot,setProductionLot] = useState("");
+  const [saleLot,setSaleLot] = useState("");
   const [qcProduct,setQcProduct] = useState("");
   const [qcLot,setQcLot] = useState("");
   const [qcStage,setQcStage] = useState("منتج نهائي");
@@ -95,14 +97,24 @@ export default function App() {
       if(!Number.isFinite(q) || q<=0) { Alert.alert("كمية غير صحيحة","أدخل كمية بيع أكبر من صفر."); return; }
       const item=data.stock.find(x=>x.name.trim().toLowerCase()===name.trim().toLowerCase());
       if(!item) { Alert.alert("الصنف غير موجود","أضف الصنف إلى المخزون أولاً، واستخدم اسم الصنف نفسه عند تسجيل البيع."); return; }
-      const finalChecks=(data.qualityChecks||[]).filter(x=>x.product.trim().toLowerCase()===item.name.trim().toLowerCase() && x.stage==="منتج نهائي").sort((a,b)=>new Date(b.date)-new Date(a.date));
-      if(finalChecks.length && finalChecks[0].decision!=="مقبول") { Alert.alert("البيع موقوف من الجودة","آخر فحص للمنتج "+item.name+" نتيجته: "+finalChecks[0].decision+". لا تسجل البيع حتى يُعاد الفحص ويُعتمد المنتج."); return; }
+      const productLots=(data.productions||[]).filter(x=>(x.productId===item.id || x.productName.trim().toLowerCase()===item.name.trim().toLowerCase()));
+      let selectedLot=null;
+      if(productLots.length) {
+        if(!saleLot.trim()) { Alert.alert("رقم التشغيلة مطلوب","هذا المنتج له تشغيلات إنتاج. أدخل رقم التشغيلة المراد البيع منها."); return; }
+        selectedLot=productLots.find(x=>String(x.lotNumber||"").trim().toLowerCase()===saleLot.trim().toLowerCase());
+        if(!selectedLot) { Alert.alert("التشغيلة غير موجودة","راجع رقم التشغيلة المسجل في الإنتاج."); return; }
+        if(selectedLot.qualityStatus!=="مقبول") { Alert.alert("التشغيلة غير معتمدة","حالة جودة التشغيلة: "+(selectedLot.qualityStatus||"بانتظار الفحص")+"."); return; }
+        if(q>Number(selectedLot.remainingQuantity??selectedLot.outputQuantity)) { Alert.alert("رصيد التشغيلة غير كافٍ","المتبقي في هذه التشغيلة "+Number(selectedLot.remainingQuantity??selectedLot.outputQuantity)+"."); return; }
+      } else {
+        const finalChecks=(data.qualityChecks||[]).filter(x=>x.product.trim().toLowerCase()===item.name.trim().toLowerCase() && x.stage==="منتج نهائي").sort((a,b)=>new Date(b.date)-new Date(a.date));
+        if(finalChecks.length && finalChecks[0].decision!=="مقبول") { Alert.alert("البيع موقوف من الجودة","آخر فحص للمنتج "+item.name+" نتيجته: "+finalChecks[0].decision+"."); return; }
+      }
       if(q>Number(item.quantity)) { Alert.alert("رصيد غير كافٍ", "المتاح من "+item.name+" هو "+item.quantity+" فقط."); return; }
       const unitCost=Number(item.unitCost)||0;
-      entry={...entry,itemId:item.id,unitCost,cogs:q*unitCost,grossProfit:v-(q*unitCost)};
-      next={...next,stock:data.stock.map(x=>x.id===item.id?{...x,quantity:Number(x.quantity)-q}:x),movements:[...(data.movements||[]),{id:entry.id,itemId:item.id,itemName:item.name,type:"بيع",quantity:q,date:entry.date}]};
+      entry={...entry,itemId:item.id,lotNumber:selectedLot?selectedLot.lotNumber:undefined,unitCost,cogs:q*unitCost,grossProfit:v-(q*unitCost)};
+      next={...next,stock:data.stock.map(x=>x.id===item.id?{...x,quantity:Number(x.quantity)-q}:x),productions:selectedLot?(data.productions||[]).map(x=>x.id===selectedLot.id?{...x,remainingQuantity:Number(x.remainingQuantity??x.outputQuantity)-q}:x):(data.productions||[]),movements:[...(data.movements||[]),{id:entry.id,itemId:item.id,itemName:item.name,type:"بيع",quantity:q,lotNumber:selectedLot?selectedLot.lotNumber:undefined,date:entry.date}]};
     }
-    await persist(next); setName(""); setAmount(""); setQuantity(""); setNote("");
+    await persist(next); setName(""); setAmount(""); setQuantity(""); setNote(""); setSaleLot("");
     Alert.alert("تم الحفظ","تم تسجيل العملية على هذا الجهاز.");
   };
 
@@ -210,10 +222,11 @@ export default function App() {
     });
     if(!existing) stock=[{id:productId,name:productionProduct.trim(),quantity:output,unitCost},...stock];
     const date=stamp(), id="prod-"+Date.now().toString();
-    const production={id,productId,productName:productionProduct.trim(),outputQuantity:output,materials:requirements,materialCost,extraCost:extra,totalCost,unitCost,note:productionNote.trim(),qualityStatus:"بانتظار فحص المنتج النهائي",date};
+    const lotNumber=productionLot.trim()||("LOT-"+Date.now().toString());
+    const production={id,productId,productName:productionProduct.trim(),lotNumber,outputQuantity:output,remainingQuantity:output,materials:requirements,materialCost,extraCost:extra,totalCost,unitCost,note:productionNote.trim(),qualityStatus:"بانتظار فحص المنتج النهائي",date};
     const movements=[...(data.movements||[]),...requirements.map((x,i)=>({id:id+"-raw-"+i,itemId:x.itemId,itemName:x.itemName,type:"استهلاك إنتاج",quantity:x.quantity,date})),{id:id+"-out",itemId:productId,itemName:productionProduct.trim(),type:"إنتاج",quantity:output,date}];
     await persist({...data,stock,productions:[...(data.productions||[]),production],movements});
-    setProductionProduct("");setProductionOutput("");setProductionMaterials("");setProductionExtraCost("");setProductionNote("");setSelectedRecipeId("");
+    setProductionProduct("");setProductionOutput("");setProductionMaterials("");setProductionExtraCost("");setProductionNote("");setProductionLot("");setSelectedRecipeId("");
     Alert.alert("تم تسجيل الإنتاج","تم خصم المواد الخام وإضافة المنتج النهائي إلى المخزون.");
   };
 
@@ -247,7 +260,12 @@ export default function App() {
       Alert.alert("بيانات ناقصة","أدخل اسم الصنف أو المنتج ورقم الدفعة."); return;
     }
     const record={id:"qc-"+Date.now(),product:qcProduct.trim(),lot:qcLot.trim(),stage:qcStage,decision:qcDecision,defects:qcDefects.trim(),note:qcNote.trim(),date:stamp()};
-    await persist({...data,qualityChecks:[...(data.qualityChecks||[]),record]});
+    let productions=data.productions||[];
+    if(qcStage==="منتج نهائي") {
+      const lot=productions.find(x=>String(x.lotNumber||"").trim().toLowerCase()===qcLot.trim().toLowerCase() && x.productName.trim().toLowerCase()===qcProduct.trim().toLowerCase());
+      if(lot) productions=productions.map(x=>x.id===lot.id?{...x,qualityStatus:qcDecision}:x);
+    }
+    await persist({...data,productions,qualityChecks:[...(data.qualityChecks||[]),record]});
     setQcProduct("");setQcLot("");setQcDefects("");setQcNote("");setQcDecision("مقبول");
     Alert.alert("تم حفظ الفحص","تم تسجيل نتيجة فحص الجودة.");
   };
@@ -350,6 +368,7 @@ export default function App() {
     <Field label="الوصف" value={name} onChange={setName} placeholder={type==="sales"?"مثال: بيع صابون TRUST":"مثال: شراء عبوات"}/>
     <Field label="المبلغ بالجنيه السوداني" value={amount} onChange={setAmount} keyboardType="decimal-pad"/>
     <Field label="الكمية (اختياري)" value={quantity} onChange={setQuantity} keyboardType="decimal-pad"/>
+    {type==="sales" && quantity.trim() && (data.productions||[]).some(x=>x.productName.trim().toLowerCase()===name.trim().toLowerCase())?<Field label="رقم تشغيلة المنتج" value={saleLot} onChange={setSaleLot} placeholder="أدخل رقم التشغيلة"/>:null}
     <Field label="ملاحظات (اختياري)" value={note} onChange={setNote}/>
     <Btn title="حفظ العملية" onPress={()=>addFinancial(type)}/>
   </Card><Section>سجل العمليات</Section>
@@ -368,12 +387,13 @@ export default function App() {
     {selectedRecipeId?<Text style={s.status}>الوصفة المختارة: {(data.recipes||[]).find(x=>x.id===selectedRecipeId)?.name} • تُضبط كميات المواد تلقائياً حسب حجم الدفعة</Text>:null}
     <Field label="اسم المنتج النهائي" value={productionProduct} onChange={v=>{setProductionProduct(v);setSelectedRecipeId("");}} placeholder="مثال: صابون TRUST 350 مل"/>
     <Field label="الكمية المنتجة" value={productionOutput} onChange={setProductionOutput} keyboardType="decimal-pad"/>
+    <Field label="رقم التشغيلة (يُنشأ تلقائياً إذا تُرك فارغاً)" value={productionLot} onChange={setProductionLot} placeholder="مثال: TRUST-2026-001"/>
     {selectedRecipeId && previewOutput>0?<Card><Text style={s.cardTitle}>تقدير ما قبل الإنتاج</Text>{productionPreview.map(x=><Text key={x.name} style={s.hint}>{x.name}: مطلوب {x.required.toFixed(2)} • متاح {x.available} • تكلفة تقديرية {money(x.required*x.unitCost)}</Text>)}<Text style={s.hint}>إجمالي تكلفة الدفعة المتوقعة: {money(previewTotal)}</Text><Text style={s.hint}>تكلفة الوحدة المتوقعة: {money(previewTotal/previewOutput)}</Text><Text style={[s.status,{color:previewHasIssue?C.red:C.brand}]}>{previewHasIssue?"تنبيه: راجع الرصيد أو تكلفة إحدى المواد قبل الإنتاج":"المواد متاحة وتكاليفها مسجلة"}</Text></Card>:null}
     {!selectedRecipeId?<View style={s.field}><Text style={s.label}>المواد الخام المستهلكة (مادة في كل سطر)</Text><TextInput value={productionMaterials} onChangeText={setProductionMaterials} multiline numberOfLines={5} placeholder={"مثال:\nصابون خام | 20\nعبوات 350 مل | 50"} placeholderTextColor="#98A2B3" textAlignVertical="top" style={[s.input,{minHeight:120}]}/><Text style={s.hint}>الصيغة: اسم المادة | الكمية. استخدم سطراً مستقلاً لكل مادة.</Text></View>:<Btn title="إلغاء الوصفة واستخدام مواد يدوية" onPress={()=>setSelectedRecipeId("")} secondary/>}
     <Field label="تكاليف إضافية للدفعة (اختياري)" value={productionExtraCost} onChange={setProductionExtraCost} keyboardType="decimal-pad"/>
     <Field label="ملاحظات (اختياري)" value={productionNote} onChange={setProductionNote}/>
     <Btn title="حفظ دفعة الإنتاج" onPress={addProduction}/>
-  </Card><Section>سجل دفعات الإنتاج</Section>{(data.productions||[]).length===0?<Empty/>:(data.productions||[]).slice().reverse().map(p=><Card key={p.id}><Text style={s.cardTitle}>{p.productName}</Text><Text style={s.hint}>الإنتاج: {p.outputQuantity} • تكلفة الدفعة: {money(p.totalCost)}</Text><Text style={s.hint}>تكلفة الوحدة المنتجة: {money(p.unitCost)}</Text><Text style={s.hint}>المواد: {(p.materials||[]).map(m=>m.itemName+" ("+m.quantity+")").join("، ")}</Text>{p.note?<Text style={s.hint}>{p.note}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>;
+  </Card><Section>سجل دفعات الإنتاج</Section>{(data.productions||[]).length===0?<Empty/>:(data.productions||[]).slice().reverse().map(p=><Card key={p.id}><Text style={s.cardTitle}>{p.productName}</Text><Text style={s.hint}>التشغيلة: {p.lotNumber||"قديمة"} • المتبقي: {p.remainingQuantity??p.outputQuantity} • الجودة: {p.qualityStatus||"بانتظار الفحص"}</Text><Text style={s.hint}>الإنتاج: {p.outputQuantity} • تكلفة الدفعة: {money(p.totalCost)}</Text><Text style={s.hint}>تكلفة الوحدة المنتجة: {money(p.unitCost)}</Text><Text style={s.hint}>المواد: {(p.materials||[]).map(m=>m.itemName+" ("+m.quantity+")").join("، ")}</Text>{p.note?<Text style={s.hint}>{p.note}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>;
 
   const purchasesScreen = <><Section>تسجيل مشتريات جديدة</Section><Text style={s.body}>أدخل التكلفة الإجمالية للكمية المشتراة. سيُحدّث التطبيق متوسط تكلفة الوحدة المرجّح للصنف.</Text><Card><Field label="اسم الصنف" value={purchaseItem} onChange={setPurchaseItem}/><Field label="الكمية المشتراة" value={purchaseQty} onChange={setPurchaseQty} keyboardType="decimal-pad"/><Field label="إجمالي تكلفة الشراء (ج.س)" value={purchaseCost} onChange={setPurchaseCost} keyboardType="decimal-pad"/><Field label="المورد (اختياري)" value={supplier} onChange={setSupplier}/><Btn title="حفظ المشتريات وتحديث المخزون" onPress={addPurchase}/></Card><Section>سجل المشتريات</Section>{(data.purchases||[]).length===0?<Empty/>:(data.purchases||[]).slice().reverse().map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.totalCost)}</Text><Text style={s.cardTitle}>{p.itemName}</Text></View><Text style={s.hint}>الكمية: {p.quantity} • تكلفة الوحدة: {money(p.unitCost)}</Text>{p.supplier?<Text style={s.hint}>المورد: {p.supplier}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>; 
 
