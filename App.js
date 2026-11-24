@@ -32,6 +32,7 @@ export default function App() {
   const [screen,setScreen] = useState("الرئيسية");
   const [loading,setLoading] = useState(true);
   const [storageError,setStorageError] = useState(false);
+  const [legacyLocalAvailable,setLegacyLocalAvailable] = useState(false);
   const [authReady,setAuthReady] = useState(!isSupabaseConfigured);
   const [authSession,setAuthSession] = useState(null);
   const [authBusy,setAuthBusy] = useState(false);
@@ -127,12 +128,19 @@ export default function App() {
   useEffect(() => {
     let active=true;
     setLoading(true);
-    AsyncStorage.getItem(storageKey).then(raw => {
+    AsyncStorage.getItem(storageKey).then(async raw => {
       if(!active) return;
       if(raw) {
         const parsed=JSON.parse(raw);
         setData({...INITIAL,...parsed});
+        setLegacyLocalAvailable(false);
+      } else if(storageKey!==KEY) {
+        const legacyRaw=await AsyncStorage.getItem(KEY);
+        if(!active) return;
+        setLegacyLocalAvailable(Boolean(legacyRaw));
+        setData(INITIAL);
       } else {
+        setLegacyLocalAvailable(false);
         setData(INITIAL);
       }
     }).catch(() => { if(active) setStorageError(true); })
@@ -222,6 +230,42 @@ export default function App() {
     else { setAuthSession(null); setOrganizationId(""); }
   };
 
+  const importLegacyLocalData = () => {
+    if(!legacyLocalAvailable || storageKey===KEY) return;
+    Alert.alert(
+      "استيراد البيانات المحلية السابقة",
+      "تم العثور على بيانات محفوظة من النسخة السابقة على هذا الجهاز. سيتم نسخها إلى حسابك الحالي، مع إبقاء الملف الأصلي ونسخة احتياطية محلية.",
+      [
+        {text:"إلغاء",style:"cancel"},
+        {text:"استيراد آمن",onPress:async()=>{
+          try {
+            const legacyRaw=await AsyncStorage.getItem(KEY);
+            if(!legacyRaw) {
+              setLegacyLocalAvailable(false);
+              Alert.alert("لم يتم العثور على نسخة","النسخة المحلية السابقة غير موجودة.");
+              return;
+            }
+            const parsed=JSON.parse(legacyRaw);
+            if(!parsed || typeof parsed!=="object" || Array.isArray(parsed)) {
+              throw new Error("ملف البيانات المحلية السابقة غير صالح.");
+            }
+            const backupKey=KEY+":before-legacy-import:"+Date.now();
+            await AsyncStorage.setItem(backupKey,JSON.stringify(data));
+            const imported={...INITIAL,...parsed};
+            await AsyncStorage.setItem(storageKey,JSON.stringify(imported));
+            setData(imported);
+            setLegacyLocalAvailable(false);
+            setStorageError(false);
+            Alert.alert("اكتمل الاستيراد","تم استيراد البيانات السابقة إلى حسابك. النسخة الأصلية لم تُحذف.");
+          } catch(error) {
+            setStorageError(true);
+            Alert.alert("تعذر الاستيراد",error.message||"حدث خطأ أثناء الاستيراد.");
+          }
+        }}
+      ]
+    );
+  };
+
   const persist = async next => {
     setData(next);
     try { await AsyncStorage.setItem(storageKey,JSON.stringify(next)); setStorageError(false); }
@@ -265,6 +309,10 @@ export default function App() {
   };
 
   const uploadLocalData = () => {
+    if(legacyLocalAvailable) {
+      Alert.alert("استورد بياناتك السابقة أولاً","وجد جوري بيانات محلية من النسخة السابقة لم تُنقل إلى حسابك بعد. استوردها أولاً حتى لا ترفع سجلاً فارغاً أو ناقصاً.");
+      return;
+    }
     if(!cloudChecked) {
       Alert.alert("افحص السحابة أولاً","اضغط فحص السحابة قبل رفع البيانات.");
       return;
@@ -1028,6 +1076,11 @@ export default function App() {
 
   const settingsScreen = <>
     <Section>الإعدادات وحالة البيانات</Section>
+    {legacyLocalAvailable?<Card>
+      <Text style={s.cardTitle}>بيانات محلية من النسخة السابقة</Text>
+      <Text style={s.body}>وجد جوري سجلات محفوظة قبل ربط الحساب. لم تُحذف ولم تُرفع. استوردها إلى حسابك قبل استخدام المزامنة.</Text>
+      <Btn title="استيراد البيانات السابقة بأمان" onPress={importLegacyLocalData}/>
+    </Card>:null}
     <Card>
       <Text style={s.cardTitle}>الحفظ المحلي</Text>
       <Text style={s.body}>كل عملية تُحفظ على هذا الجهاز أولاً. المزامنة السحابية يدوية فقط، ولا ترفع أو تستبدل البيانات تلقائياً.</Text>
