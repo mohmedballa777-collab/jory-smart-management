@@ -7,6 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Network from "expo-network";
 import { supabase, isSupabaseConfigured } from "./src/lib/supabase";
 
+const OFFLINE_MODE = true; // Temporary: open the app directly without cloud sign-in.
 const KEY = "jouri-business-data-v1";
 const C = { ink:"#172B4D", muted:"#667085", brand:"#176B55", pale:"#EAF4EF", line:"#E7EBEF", bg:"#F5F7F8", white:"#FFFFFF", red:"#B54747", gold:"#D99B25" };
 const DEPARTMENTS = [
@@ -35,7 +36,7 @@ export default function App() {
   const [loadedStorageKey,setLoadedStorageKey] = useState("");
   const [storageError,setStorageError] = useState(false);
   const [legacyLocalAvailable,setLegacyLocalAvailable] = useState(false);
-  const [authReady,setAuthReady] = useState(!isSupabaseConfigured);
+  const [authReady,setAuthReady] = useState(true);
   const [authSession,setAuthSession] = useState(null);
   const [authBusy,setAuthBusy] = useState(false);
   const [authEmail,setAuthEmail] = useState("mohmedballa777@gmail.com");
@@ -190,7 +191,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if(!isSupabaseConfigured || !supabase) return;
+    if(OFFLINE_MODE || !isSupabaseConfigured || !supabase) return;
     let active = true;
     supabase.auth.getSession().then(({data,error}) => {
       if(!active) return;
@@ -990,7 +991,7 @@ export default function App() {
     }}
   ]);
 
-  const canManageOrganization = !isSupabaseConfigured || ["owner","admin"].includes(organizationRole);
+  const canManageOrganization = OFFLINE_MODE || !isSupabaseConfigured || ["owner","admin"].includes(organizationRole);
   const go = value => {
     if(["المستخدمون","الإعدادات"].includes(value) && !canManageOrganization) {
       Alert.alert("صلاحية غير كافية","إدارة المستخدمين وإعدادات المؤسسة متاحة لمالك المؤسسة أو المدير الإداري فقط.");
@@ -1268,9 +1269,9 @@ export default function App() {
 
   const deptScreen = <Card><Text style={s.cardTitle}>{screen}</Text><Text style={s.body}>تم إنشاء مدخل لهذا القسم ضمن الهيكل الإداري لجوري. وظائفه التفصيلية ستُبنى على مراحل، مع ربطها بقاعدة البيانات والصلاحيات.</Text></Card>;
 
-  if(loading || (isSupabaseConfigured && (!authReady || membershipLoading))) return <SafeAreaView style={s.safe}><ActivityIndicator style={{marginTop:80}} size="large" color={C.brand}/><Text style={s.loading}>جارٍ تجهيز جوري...</Text></SafeAreaView>;
+  if(loading || (!OFFLINE_MODE && isSupabaseConfigured && (!authReady || membershipLoading))) return <SafeAreaView style={s.safe}><ActivityIndicator style={{marginTop:80}} size="large" color={C.brand}/><Text style={s.loading}>جارٍ تجهيز جوري...</Text></SafeAreaView>;
 
-  if(isSupabaseConfigured && (!authSession || !organizationId)) return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
+  if(!OFFLINE_MODE && isSupabaseConfigured && (!authSession || !organizationId)) return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
     <View style={s.header}><View><Text style={s.brand}>جوري</Text><Text style={s.tagline}>معامل جوري للصناعات المتعددة</Text></View><View style={s.logo}><Text style={s.logoText}>ج</Text></View></View>
     <Card><Section>{authSession ? "إنشاء مؤسسة جوري" : "تسجيل الدخول إلى جوري"}</Section>
       <Text style={s.body}>اتصال الحساب السحابي مفعّل. بيانات التشغيل المحلية لا تُنقل إلى السحابة تلقائياً.</Text>
@@ -1312,7 +1313,7 @@ export default function App() {
 
   return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><ScrollView contentContainerStyle={s.page}>{header}
     <View style={s.topNav}><Pressable onPress={()=>go("الرئيسية")}><Text style={s.back}>‹ الرئيسية</Text></Pressable><Text style={s.screenTitle}>{screen}</Text></View>
-    {body}{isSupabaseConfigured&&authSession?<Pressable onPress={signOut}><Text style={s.delete}>تسجيل الخروج من الحساب السحابي</Text></Pressable>:null}<Text style={s.footer}>جوري • نظام الإدارة الذكية • إصدار أولي</Text>
+    {body}{!OFFLINE_MODE&&isSupabaseConfigured&&authSession?<Pressable onPress={signOut}><Text style={s.delete}>تسجيل الخروج من الحساب السحابي</Text></Pressable>:null}<Text style={s.footer}>جوري • نظام الإدارة الذكية • إصدار أولي</Text>
   </ScrollView><View style={s.bottom}>{[["الرئيسية","⌂"],["المبيعات","＋"],["المخزون","▦"],["الإعدادات","⚙"]].map(x=><Pressable key={x[0]} onPress={()=>go(x[0])} style={s.tab}><Text style={[s.tabIcon,screen===x[0]&&s.tabOn]}>{x[1]}</Text><Text style={[s.tabText,screen===x[0]&&s.tabOn]}>{x[0]}</Text></Pressable>)}</View></SafeAreaView>;
 }
 
