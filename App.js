@@ -69,6 +69,15 @@ export default function App() {
   const [saleCustomerName,setSaleCustomerName] = useState("");
   const [salePaid,setSalePaid] = useState("");
   const [saleProject,setSaleProject] = useState("TRUST - الصابون");
+  const [staffName,setStaffName] = useState("");
+  const [staffJob,setStaffJob] = useState("");
+  const [staffSalary,setStaffSalary] = useState("");
+  const [attendanceStaff,setAttendanceStaff] = useState("");
+  const [attendanceDate,setAttendanceDate] = useState(new Date().toISOString().slice(0,10));
+  const [attendanceStatus,setAttendanceStatus] = useState("حضور");
+  const [attendanceNote,setAttendanceNote] = useState("");
+  const [payrollMonth,setPayrollMonth] = useState(new Date().toISOString().slice(0,7));
+  const [payrollPayAmount,setPayrollPayAmount] = useState("");
   const [paymentCustomerId,setPaymentCustomerId] = useState("");
   const [paymentAmount,setPaymentAmount] = useState("");
   const [qcProduct,setQcProduct] = useState("");
@@ -421,6 +430,37 @@ export default function App() {
   const previewHasIssue=productionPreview.some(x=>x.available<x.required || x.unitCost<=0);
   const previewTotal=previewMaterialCost+(Number(productionExtraCost)||0);
 
+  const addStaff = async () => {
+    const salary=Number(staffSalary);
+    if(!staffName.trim() || !staffSalary.trim() || !Number.isFinite(salary) || salary<=0) { Alert.alert("بيانات ناقصة","أدخل اسم الموظف والراتب الشهري الصحيح."); return; }
+    const staff={id:"staff-"+Date.now(),name:staffName.trim(),job:staffJob.trim()||"غير محدد",monthlySalary:salary,createdAt:stamp(),active:true};
+    await persist({...data,staff:[staff,...(data.staff||[])]});
+    setStaffName("");setStaffJob("");setStaffSalary("");
+  };
+  const markAttendance = async () => {
+    const employee=(data.staff||[]).find(x=>x.id===attendanceStaff);
+    if(!employee){Alert.alert("اختر الموظف","حدد الموظف أولاً.");return;}
+    if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(attendanceDate)){Alert.alert("التاريخ غير صحيح","اكتب التاريخ بصيغة YYYY-MM-DD.");return;}
+    const rows=data.attendance||[];
+    if(rows.some(x=>x.staffId===employee.id && x.date===attendanceDate)){Alert.alert("سجل موجود","تم تسجيل حالة هذا الموظف في التاريخ نفسه.");return;}
+    const record={id:"att-"+Date.now(),staffId:employee.id,staffName:employee.name,date:attendanceDate,status:attendanceStatus,note:attendanceNote.trim()};
+    await persist({...data,attendance:[record,...rows]});setAttendanceNote("");
+  };
+  const payStaff = async employee => {
+    const rows=(data.attendance||[]).filter(x=>x.staffId===employee.id && x.date.slice(0,7)===payrollMonth);
+    const absent=rows.filter(x=>x.status==="غياب").length;
+    const due=Math.max(0,Number(employee.monthlySalary||0)-(Number(employee.monthlySalary||0)/30)*absent);
+    const paid=(data.payrollPayments||[]).filter(x=>x.staffId===employee.id && x.month===payrollMonth).reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const remaining=Math.max(0,due-paid), amount=Number(payrollPayAmount);
+    if(!payrollPayAmount.trim()||!Number.isFinite(amount)||amount<=0||amount>remaining){Alert.alert("مبلغ غير صحيح","أدخل مبلغاً أكبر من صفر ولا يتجاوز المتبقي "+money(remaining));return;}
+    const id="pay-"+Date.now(),date=stamp();
+    const payment={id,staffId:employee.id,staffName:employee.name,month:payrollMonth,amount,date};
+    const expense={id,name:"راتب "+employee.name+" - "+payrollMonth,amount,quantity:"",note:"صرف راتب موظف",category:"رواتب",costCenter:"الموارد البشرية",project:"الرواتب",date};
+    const cash={id:"cash-"+id,referenceId:id,type:"صرف راتب",direction:"out",amount,description:expense.name,date};
+    await persist({...data,payrollPayments:[payment,...(data.payrollPayments||[])],expenses:[expense,...(data.expenses||[])],cashMovements:[cash,...(data.cashMovements||[])]});
+    setPayrollPayAmount("");Alert.alert("تم التسجيل","تم تسجيل صرف الراتب في المصروفات والخزينة.");
+  };
+
   const addUser = async () => {
     if(!userName.trim()){Alert.alert("بيانات ناقصة","أدخل اسم المستخدم.");return;}
     await persist({...data,users:[...data.users,{id:Date.now().toString(),name:userName.trim(),role:userRole}]});
@@ -457,7 +497,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text><Text style={s.hint}>الربح الإجمالي ناقص المصروفات المسجلة. لا يشمل الضرائب أو الالتزامات أو التكاليف غير المدخلة.</Text></Card>
     <Section>ملخص اليوم</Section><View style={s.metrics}><Card><Text style={s.metricLabel}>عدد عمليات البيع</Text><Text style={s.metricValue}>{dailyReport.salesCount}</Text><Text style={s.hint}>{money(dailyReport.sales)}</Text></Card><Card><Text style={s.metricLabel}>عدد المصروفات</Text><Text style={s.metricValue}>{dailyReport.expenseCount}</Text><Text style={s.hint}>{money(dailyReport.expenses)}</Text></Card></View>\n    <Section>اختصارات التشغيل</Section>
     <View style={s.quickGrid}>
-      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"],["الخزينة","الخزينة","💰"],["متابعة TRUST","متابعة TRUST","🧼"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
+      {[[ "تسجيل بيع","المبيعات","🛒"],["تسجيل مصروف","المصروفات","💸"],["إدارة المخزون","المخزون","📦"],["الإنتاج","الإنتاج","🏭"],["المستخدمون","المستخدمون","👥"],["الجودة","الجودة","🧪"],["التقارير","التقارير","📊"],["العملاء","العملاء","👤"],["الموردون","الموردون","🚚"],["الخزينة","الخزينة","💰"],["متابعة TRUST","متابعة TRUST","🧼"],["الموظفون والرواتب","الموظفون والرواتب","👷"]].map(x=><Pressable key={x[1]} style={s.quick} onPress={()=>go(x[1])}><Text style={s.quickIcon}>{x[2]}</Text><Text style={s.quickTitle}>{x[0]}</Text></Pressable>)}
     </View>
     <Section>الإدارات الثماني</Section>
     {DEPARTMENTS.map(d=><Pressable key={d[0]} style={s.department} onPress={()=>go(d[0])}><Text style={s.deptIcon}>{d[1]}</Text><Text style={s.deptName}>{d[0]}</Text><Text style={s.chevron}>‹</Text></Pressable>)}
@@ -603,6 +643,27 @@ export default function App() {
 
   const purchasesScreen = <><Section>تسجيل مشتريات جديدة</Section><Text style={s.body}>أدخل التكلفة الإجمالية للكمية المشتراة. سيُحدّث التطبيق متوسط تكلفة الوحدة المرجّح للصنف.</Text><Card><Field label="اسم الصنف" value={purchaseItem} onChange={setPurchaseItem}/><Field label="الكمية المشتراة" value={purchaseQty} onChange={setPurchaseQty} keyboardType="decimal-pad"/><Field label="إجمالي تكلفة الشراء (ج.س)" value={purchaseCost} onChange={setPurchaseCost} keyboardType="decimal-pad"/><Field label="المورد (اختياري)" value={supplier} onChange={setSupplier}/><Field label="المبلغ المدفوع الآن (اتركه فارغاً للسداد الكامل)" value={purchasePaid} onChange={setPurchasePaid} keyboardType="decimal-pad"/><Btn title="حفظ المشتريات وتحديث المخزون" onPress={addPurchase}/></Card><Section>سجل المشتريات</Section>{(data.purchases||[]).length===0?<Empty/>:(data.purchases||[]).slice().reverse().map(p=><Card key={p.id}><View style={s.row}><Text style={s.amount}>{money(p.totalCost)}</Text><Text style={s.cardTitle}>{p.itemName}</Text></View><Text style={s.hint}>الكمية: {p.quantity} • تكلفة الوحدة: {money(p.unitCost)}</Text>{p.supplier?<Text style={s.hint}>المورد: {p.supplier}</Text>:null}<Text style={s.hint}>{new Date(p.date).toLocaleString("ar")}</Text></Card>)}</>; 
 
+  const hrScreen = <>
+    <Section>إضافة موظف</Section>
+    <Card><Field label="اسم الموظف" value={staffName} onChange={setStaffName}/><Field label="المسمى الوظيفي" value={staffJob} onChange={setStaffJob}/><Field label="الراتب الشهري بالجنيه" value={staffSalary} onChange={setStaffSalary} keyboardType="decimal-pad"/><Btn title="حفظ الموظف" onPress={addStaff}/></Card>
+    <Section>تسجيل الحضور</Section>
+    <Card><Text style={s.label}>اختر الموظف</Text><View style={s.roleRow}>{(data.staff||[]).map(x=><Pressable key={x.id} onPress={()=>setAttendanceStaff(x.id)} style={[s.roleChip,attendanceStaff===x.id&&s.roleSelected]}><Text style={attendanceStaff===x.id?s.roleSelectedText:s.roleText}>{x.name}</Text></Pressable>)}</View>
+    <Field label="التاريخ YYYY-MM-DD" value={attendanceDate} onChange={setAttendanceDate}/>
+    <Text style={s.label}>الحالة</Text><View style={s.roleRow}>{["حضور","غياب","إجازة"].map(x=><Pressable key={x} onPress={()=>setAttendanceStatus(x)} style={[s.roleChip,attendanceStatus===x&&s.roleSelected]}><Text style={attendanceStatus===x?s.roleSelectedText:s.roleText}>{x}</Text></Pressable>)}</View>
+    <Field label="ملاحظات (اختياري)" value={attendanceNote} onChange={setAttendanceNote}/><Btn title="حفظ سجل الحضور" onPress={markAttendance}/></Card>
+    <Section>الرواتب الشهرية</Section>
+    <Card><Field label="الشهر YYYY-MM" value={payrollMonth} onChange={setPayrollMonth}/><Field label="مبلغ دفعة الراتب" value={payrollPayAmount} onChange={setPayrollPayAmount} keyboardType="decimal-pad"/><Text style={s.hint}>الحساب تقديري: الراتب الشهري ناقص خصم أيام الغياب على أساس 30 يوماً. الإجازة لا تخصم تلقائياً.</Text></Card>
+    {(data.staff||[]).length===0?<Empty>أضف الموظفين أولاً.</Empty>:(data.staff||[]).map(employee=>{
+      const rows=(data.attendance||[]).filter(x=>x.staffId===employee.id && x.date.slice(0,7)===payrollMonth);
+      const absent=rows.filter(x=>x.status==="غياب").length;
+      const due=Math.max(0,Number(employee.monthlySalary||0)-(Number(employee.monthlySalary||0)/30)*absent);
+      const paid=(data.payrollPayments||[]).filter(x=>x.staffId===employee.id && x.month===payrollMonth).reduce((sum,x)=>sum+Number(x.amount||0),0);
+      return <Card key={employee.id}><Text style={s.cardTitle}>{employee.name}</Text><Text style={s.hint}>{employee.job} • الراتب الأساسي: {money(employee.monthlySalary)}</Text><View style={s.metrics}><View><Text style={s.metricLabel}>الحضور</Text><Text style={s.metricValue}>{rows.filter(x=>x.status==="حضور").length}</Text></View><View><Text style={s.metricLabel}>الغياب</Text><Text style={s.metricValue}>{absent}</Text></View><View><Text style={s.metricLabel}>الإجازات</Text><Text style={s.metricValue}>{rows.filter(x=>x.status==="إجازة").length}</Text></View></View><Text style={s.hint}>المستحق: {money(due)} • المصروف: {money(paid)} • المتبقي: {money(Math.max(0,due-paid))}</Text><Btn title="تسجيل صرف الدفعة المدخلة" onPress={()=>payStaff(employee)} secondary={paid>=due}/></Card>;
+    })}
+    <Section>سجل الحضور للشهر</Section>
+    {(data.attendance||[]).filter(x=>x.date.slice(0,7)===payrollMonth).length===0?<Empty>لا توجد سجلات حضور لهذا الشهر.</Empty>:(data.attendance||[]).filter(x=>x.date.slice(0,7)===payrollMonth).map(x=><Card key={x.id}><View style={s.row}><Text style={s.cardTitle}>{x.staffName}</Text><Text style={s.amount}>{x.status}</Text></View><Text style={s.hint}>{x.date}{x.note?" • "+x.note:""}</Text></Card>)}
+  </>;
+
   const usersScreen = <><Section>إدارة المستخدمين</Section><Text style={s.body}>تسجيل أسماء وأدوار مبدئي. المصادقة الحقيقية وحماية الصلاحيات تحتاج خادماً وتسجيل دخول قبل الاستخدام الفعلي متعدد الأجهزة.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card>{data.users.map(u=><Card key={u.id}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role}</Text></Card>)}</>;
 
 
@@ -631,6 +692,7 @@ export default function App() {
   else if(screen==="الجودة") body=qualityScreen;
   else if(screen==="الخزينة") body=cashScreen;
   else if(screen==="متابعة TRUST") body=trustDashboard;
+  else if(screen==="الموظفون والرواتب") body=hrScreen;
   else if(screen==="التقارير") body=reportScreen;
   else if(screen==="العملاء") body=customersScreen;
   else if(screen==="الموردون") body=suppliersScreen;
