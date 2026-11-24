@@ -990,7 +990,14 @@ export default function App() {
     }}
   ]);
 
-  const go = value => { setScreen(value); setName(""); setAmount(""); setQuantity(""); setNote(""); };
+  const canManageOrganization = !isSupabaseConfigured || ["owner","admin"].includes(organizationRole);
+  const go = value => {
+    if(["المستخدمون","الإعدادات"].includes(value) && !canManageOrganization) {
+      Alert.alert("صلاحية غير كافية","إدارة المستخدمين وإعدادات المؤسسة متاحة لمالك المؤسسة أو المدير الإداري فقط.");
+      return;
+    }
+    setScreen(value); setName(""); setAmount(""); setQuantity(""); setNote("");
+  };
   const header = <View style={s.header}><View><Text style={s.brand}>جــوري</Text><Text style={s.tagline}>معامل جوري للصناعات المتعددة</Text></View><View style={s.logo}><Text style={s.logoText}>ج</Text></View></View>;
 
   const home = <>
@@ -1214,7 +1221,7 @@ export default function App() {
     {(data.attendance||[]).filter(x=>x.date.slice(0,7)===payrollMonth).length===0?<Empty>لا توجد سجلات حضور لهذا الشهر.</Empty>:(data.attendance||[]).filter(x=>x.date.slice(0,7)===payrollMonth).map(x=><Card key={x.id}><View style={s.row}><Text style={s.cardTitle}>{x.staffName}</Text><Text style={s.amount}>{x.status}</Text></View><Text style={s.hint}>{x.date}{x.note?" • "+x.note:""}</Text></Card>)}
   </>;
 
-  const usersScreen = <><Section>إدارة المستخدمين والصلاحيات</Section><Text style={s.body}>يمكنك تحديد الشاشات المتاحة لكل مستخدم. هذه إعدادات تنظيمية محلية؛ لا تُعد مصادقة أو حماية أمنية فعلية قبل ربط خادم وتسجيل دخول موثوق.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور الوظيفي</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card><Section>تخصيص صلاحيات المستخدم</Section>{data.users.map(u=><Card key={u.id}><Pressable onPress={()=>setPermissionUserId(permissionUserId===u.id?"":u.id)}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role} • {u.id==="owner"?"حساب المالك المحمي":"اضغط لتعديل الشاشات المتاحة"}</Text></Pressable>{permissionUserId===u.id&&<>{u.id==="owner"?<Text style={s.status}>صلاحيات المالك كاملة ولا يمكن تعديلها من هذه الشاشة.</Text>:<View style={s.roleRow}>{PERMISSION_SCREENS.map(p=>{const allowed=(u.permissions||PERMISSION_SCREENS.filter(x=>x!=="المستخدمون"&&x!=="الإعدادات")).includes(p);return <Pressable key={p} onPress={()=>toggleUserPermission(u.id,p)} style={[s.roleChip,allowed&&s.roleSelected]}><Text style={allowed?s.roleSelectedText:s.roleText}>{allowed?"✓ ":""}{p}</Text></Pressable>})}</View>}</>}</Card>)}</>;
+  const usersScreen = <><Section>إدارة المستخدمين والصلاحيات</Section><Text style={s.body}>هذه الشاشة تسجل أسماء المستخدمين وأدوارهم وصلاحياتهم محلياً على هذا الجهاز فقط. إضافة حساب دخول حقيقي وربط صلاحياته بعضوية المؤسسة السحابية لم تُفعّل بعد؛ لا تعتبر إضافة الاسم منحاً لحساب Supabase.</Text><Card><Field label="اسم المستخدم" value={userName} onChange={setUserName}/><Text style={s.label}>الدور الوظيفي</Text><View style={s.roleRow}>{["مدير","مشرف","موظف","مشاهدة"].map(r=><Pressable key={r} onPress={()=>setUserRole(r)} style={[s.roleChip,userRole===r&&s.roleSelected]}><Text style={userRole===r?s.roleSelectedText:s.roleText}>{r}</Text></Pressable>)}</View><Btn title="إضافة مستخدم" onPress={addUser}/></Card><Section>تخصيص صلاحيات المستخدم</Section>{data.users.map(u=><Card key={u.id}><Pressable onPress={()=>setPermissionUserId(permissionUserId===u.id?"":u.id)}><Text style={s.cardTitle}>{u.name}</Text><Text style={s.hint}>الدور: {u.role} • {u.id==="owner"?"حساب المالك المحمي":"اضغط لتعديل الشاشات المتاحة"}</Text></Pressable>{permissionUserId===u.id&&<>{u.id==="owner"?<Text style={s.status}>صلاحيات المالك كاملة ولا يمكن تعديلها من هذه الشاشة.</Text>:<View style={s.roleRow}>{PERMISSION_SCREENS.map(p=>{const allowed=(u.permissions||PERMISSION_SCREENS.filter(x=>x!=="المستخدمون"&&x!=="الإعدادات")).includes(p);return <Pressable key={p} onPress={()=>toggleUserPermission(u.id,p)} style={[s.roleChip,allowed&&s.roleSelected]}><Text style={allowed?s.roleSelectedText:s.roleText}>{allowed?"✓ ":""}{p}</Text></Pressable>})}</View>}</>}</Card>)}</>;
 
   const qualityScreen = <><Section>تسجيل فحص جودة</Section><Text style={s.body}>سجّل فحص المواد الخام أو أثناء التصنيع أو المنتج النهائي، مع قرار القبول أو الرفض وتوثيق العيوب.</Text><Card>
     <Field label="اسم الصنف أو المنتج" value={qcProduct} onChange={setQcProduct} placeholder="مثال: صابون TRUST 350 مل"/>
@@ -1283,6 +1290,7 @@ export default function App() {
   </ScrollView></SafeAreaView>;
 
   let body=home;
+  if(["المستخدمون","الإعدادات"].includes(screen) && !canManageOrganization) body=<Card><Text style={s.cardTitle}>صلاحية غير كافية</Text><Text style={s.body}>هذه الشاشة متاحة لمالك المؤسسة أو المدير الإداري فقط.</Text><Btn title="العودة للرئيسية" onPress={()=>go("الرئيسية")}/></Card>;
   if(screen==="المبيعات") body=financeScreen("sales","تسجيل المبيعات","سجّل كل عملية بيع، ويمكنك إدخال كمية المنتج.");
   else if(screen==="المصروفات") body=financeScreen("expenses","تسجيل المصروفات","سجّل مصروفات التشغيل والمشتريات.");
   else if(screen==="المخزون") body=stockScreen;
