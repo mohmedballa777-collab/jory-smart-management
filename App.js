@@ -501,6 +501,7 @@ export default function App() {
     <Card><Text style={s.metricLabel}>تكلفة البضاعة المسجلة</Text><Text style={s.metricValue}>{money(totals.cogs)}</Text><Text style={s.metricLabel}>الربح الإجمالي التقديري</Text><Text style={s.metricValue}>{money(totals.gross)}</Text><Text style={s.metricLabel}>صافي التشغيل التقديري</Text><Text style={[s.bigValue,{color:totals.net>=0?C.brand:C.red}]}>{money(totals.net)}</Text></Card>
     <Card><Text style={s.metricLabel}>إجمالي مديونيات العملاء</Text><Text style={[s.bigValue,{color:C.red}]}>{money((data.sales||[]).reduce((sum,x)=>sum+Number(x.dueAmount||0),0))}</Text><Text style={s.hint}>المبالغ المتبقية على فواتير العملاء المسجلين.</Text></Card>
     <Card><Text style={s.metricLabel}>مستحقات الموردين</Text><Text style={[s.bigValue,{color:C.red}]}>{money((data.purchases||[]).reduce((sum,x)=>sum+Number(x.dueAmount||0),0))}</Text></Card>
+    <Card><Text style={s.metricLabel}>رصيد الخزينة التقديري</Text><Text style={s.bigValue}>{money((Number(data.openingCash)||0)+(data.cashMovements||[]).reduce((sum,x)=>sum+(x.direction==="in"?1:-1)*Number(x.amount||0),0))}</Text><Text style={s.hint}>وفق الحركات النقدية المسجلة فقط.</Text></Card>
     <Section>تحليل المصروفات حسب المشروع</Section>
     {Array.from(new Set((data.expenses||[]).map(x=>x.project||"عام"))).length===0?<Empty>لا توجد مصروفات مسجلة.</Empty>:Array.from(new Set((data.expenses||[]).map(x=>x.project||"عام"))).map(project=>{
       const rows=(data.expenses||[]).filter(x=>(x.project||"عام")===project);
