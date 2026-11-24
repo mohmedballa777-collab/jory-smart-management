@@ -108,14 +108,23 @@ export default function App() {
   const [qcDefects,setQcDefects] = useState("");
   const [qcNote,setQcNote] = useState("");
 
+  const storageKey = authSession?.user?.id ? KEY + ":" + authSession.user.id : KEY;
+
   useEffect(() => {
-    AsyncStorage.getItem(KEY).then(raw => {
+    let active=true;
+    setLoading(true);
+    AsyncStorage.getItem(storageKey).then(raw => {
+      if(!active) return;
       if(raw) {
         const parsed=JSON.parse(raw);
         setData({...INITIAL,...parsed});
+      } else {
+        setData(INITIAL);
       }
-    }).catch(() => setStorageError(true)).finally(() => setLoading(false));
-  }, []);
+    }).catch(() => { if(active) setStorageError(true); })
+      .finally(() => { if(active) setLoading(false); });
+    return () => { active=false; };
+  }, [storageKey]);
 
   const loadMembership = async userId => {
     if(!supabase || !userId) { setOrganizationId(""); return; }
@@ -201,7 +210,7 @@ export default function App() {
 
   const persist = async next => {
     setData(next);
-    try { await AsyncStorage.setItem(KEY,JSON.stringify(next)); setStorageError(false); }
+    try { await AsyncStorage.setItem(storageKey,JSON.stringify(next)); setStorageError(false); }
     catch (_) { setStorageError(true); Alert.alert("تنبيه","تعذر حفظ البيانات على الجهاز. تحقق من مساحة التخزين."); }
   };
 
