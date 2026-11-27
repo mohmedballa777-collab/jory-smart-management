@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Network from "expo-network";
+import ContactsScreen from "./src/components/ContactsScreen";
 import { supabase, isSupabaseConfigured } from "./src/lib/supabase";
 
 const OFFLINE_MODE = true; // Temporary: open the app directly without cloud sign-in.
@@ -15,7 +16,7 @@ const DEPARTMENTS = [
   ["المخازن والمشتريات","📦"],["الجودة والسلامة","🧪"],["التطوير والتقنية","🤖"],["الشؤون الشخصية","🎯"]
 ];
 const INITIAL = { sales:[], expenses:[], stock:[], purchases:[], productions:[], recipes:[], qualityChecks:[], movements:[], customers:[], receipts:[], staff:[], attendance:[], payrollPayments:[], tasks:[], users:[{id:"owner",name:"محمد مصطفى بله",role:"مدير عام"}], project:"TRUST - الصابون" };
-const PERMISSION_SCREENS = ["الرئيسية","المبيعات","المصروفات","المخزون","المشتريات","الإنتاج","الجودة","الخزينة","متابعة TRUST","الموظفون والرواتب","المهام","التقارير","أداء الإدارات","العملاء","الموردون","المستخدمون","الإعدادات"];
+const PERMISSION_SCREENS = ["الرئيسية","المبيعات","المصروفات","المخزون","المشتريات","الإنتاج","الجودة","الخزينة","متابعة TRUST","الموظفون والرواتب","المهام","التقارير","أداء الإدارات","العملاء","جهات الاتصال","الموردون","المستخدمون","الإعدادات"];
 const money = n => (Number(n)||0).toLocaleString("en-US") + " ج.س";
 const stamp = () => new Date().toISOString();
 
@@ -1305,6 +1306,7 @@ export default function App() {
   else if(screen==="أداء الإدارات") body=departmentReports;
   else if(screen==="العملاء") body=customersScreen;
   else if(screen==="الموردون") body=suppliersScreen;
+  else if(screen==="جهات الاتصال") body=<ContactsScreen/>;
   else if(screen==="المستخدمون") body=usersScreen;
   else if(screen==="الإعدادات") body=settingsScreen;
   else if(screen!=="الرئيسية"&&screen!=="المهام"&&screen!=="المساعد الذكي") body=deptScreen;
@@ -1314,7 +1316,7 @@ export default function App() {
   return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><ScrollView contentContainerStyle={s.page}>{header}
     <View style={s.topNav}><Pressable onPress={()=>go("الرئيسية")}><Text style={s.back}>‹ الرئيسية</Text></Pressable><Text style={s.screenTitle}>{screen}</Text></View>
     {body}{!OFFLINE_MODE&&isSupabaseConfigured&&authSession?<Pressable onPress={signOut}><Text style={s.delete}>تسجيل الخروج من الحساب السحابي</Text></Pressable>:null}<Text style={s.footer}>جوري • نظام الإدارة الذكية • إصدار أولي</Text>
-  </ScrollView><View style={s.bottom}>{[["الرئيسية","⌂"],["المبيعات","＋"],["المخزون","▦"],["الإعدادات","⚙"]].map(x=><Pressable key={x[0]} onPress={()=>go(x[0])} style={s.tab}><Text style={[s.tabIcon,screen===x[0]&&s.tabOn]}>{x[1]}</Text><Text style={[s.tabText,screen===x[0]&&s.tabOn]}>{x[0]}</Text></Pressable>)}</View></SafeAreaView>;
+  </ScrollView><View style={s.bottom}>{[["الرئيسية","⌂"],["المبيعات","＋"],["المخزون","▦"],["جهات الاتصال","☷"],["الإعدادات","⚙"]].map(x=><Pressable key={x[0]} onPress={()=>go(x[0])} style={s.tab}><Text style={[s.tabIcon,screen===x[0]&&s.tabOn]}>{x[1]}</Text><Text style={[s.tabText,screen===x[0]&&s.tabOn]}>{x[0]}</Text></Pressable>)}</View></SafeAreaView>;
 }
 
 const s=StyleSheet.create({
