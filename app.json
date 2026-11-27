@@ -8,12 +8,23 @@
     "newArchEnabled": true,
     "android": {
       "package": "com.jourilabs.smartmanagement",
-      "versionCode": 1
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ]
     },
     "extra": {
       "appPurpose": "إدارة معامل جوري للصناعات المتعددة",
       "supabaseUrl": "https://auxoehfzccqdouimaiyh.supabase.co",
       "supabasePublishableKey": "sb_publishable_xnGL7WDBgePV3QMovFQE6Q_yPxmXi8a"
-    }
+    },
+    "plugins": [
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "يسمح تطبيق جوري بقراءة جهات الاتصال على هاتفك عند طلبك ذلك."
+        }
+      ]
+    ]
   }
 }
